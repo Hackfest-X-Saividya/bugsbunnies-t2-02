@@ -51,7 +51,16 @@ def run_bandit(
     if not files:
         return ScanResult(ScanStatus.SUCCEEDED, duration_ms=_elapsed_ms(started), files_scanned=0)
 
-    command = [executable, "-r", str(root), "-f", "json", "--quiet"]
+    command = [
+        executable,
+        "-r",
+        str(root),
+        "-f",
+        "json",
+        "--quiet",
+        "--exclude",
+        ",".join(sorted(EXCLUDED_NAMES)),
+    ]
     try:
         completed = subprocess.run(
             command,

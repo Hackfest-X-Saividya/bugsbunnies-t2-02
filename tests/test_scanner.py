@@ -26,8 +26,10 @@ def test_missing_executable_is_failure(tmp_path):
 
 def test_findings_do_not_make_a_scan_failure(tmp_path, monkeypatch):
     (tmp_path / "app.py").write_text("password = 'secret'\n", encoding="utf-8")
+    captured_command = []
 
     def fake_run(*args, **kwargs):
+        captured_command.append(args[0])
         return subprocess.CompletedProcess(
             args[0],
             1,
@@ -39,6 +41,8 @@ def test_findings_do_not_make_a_scan_failure(tmp_path, monkeypatch):
     result = run_bandit(tmp_path)
     assert result.status is ScanStatus.SUCCEEDED
     assert len(result.findings) == 1
+    assert "--exclude" in captured_command[0]
+    assert ".venv" in captured_command[0][captured_command[0].index("--exclude") + 1]
 
 
 def test_malformed_output_is_failure(tmp_path, monkeypatch):
