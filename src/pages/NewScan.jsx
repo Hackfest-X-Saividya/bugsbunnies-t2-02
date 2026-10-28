@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, Check, FileArchive, FolderUp, LoaderCircle, Shield, Sparkles } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
-import { isDemoMode, getScanFindings, getScanRoutes, submitScan } from "../services/api.js";
+import { isDemoMode, getScanFindings, getScanRoutes, mapScanFinding, mapScanRoute, scanStatusLabel, submitScan } from "../services/api.js";
 import { endpoints, findings } from "../data/mockData.js";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -109,9 +109,9 @@ export default function NewScan() {
       setScan({
         id: scanId,
         projectName: files[0].name.replace(/\.[^.]+$/i, ""),
-        status: "Complete",
-        findings: realFindings,
-        endpoints: realEndpoints,
+        status: scanStatusLabel(created.status),
+        findings: realFindings.map(mapScanFinding),
+        endpoints: realEndpoints.map(mapScanRoute),
         isDemo: false,
       });
       navigate("/dashboard");

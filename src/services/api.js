@@ -20,9 +20,45 @@ async function request(path, options = {}) {
   }
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Backend request failed (${response.status}): ${body || response.statusText}`);
+    let message = body || response.statusText;
+    try {
+      const payload = JSON.parse(body);
+      message = payload.error?.message || payload.error?.kind || message;
+    } catch {
+      // Preserve the backend's text response when it is not JSON.
+    }
+    throw new Error(`Backend request failed (${response.status}): ${message}`);
   }
   return response.status === 204 ? null : response.json();
+}
+
+export function mapScanFinding(finding, index) {
+  return {
+    ...finding,
+    id: finding.id || `finding-${index + 1}`,
+    title: finding.title || finding.description || finding.rule_id || "Security finding",
+    severity: finding.severity || "info",
+    filePath: finding.filePath || finding.file_path || "",
+    line: finding.line ?? null,
+    status: finding.status || "Open",
+    mitigation: finding.mitigation || finding.remediation || null,
+    source: finding.source || finding.analyzer || "Static scanner",
+  };
+}
+
+export function mapScanRoute(route, index) {
+  return {
+    ...route,
+    id: route.id || `route-${index + 1}`,
+    filePath: route.filePath || route.file || "",
+    findings: Array.isArray(route.findings) ? route.findings : [],
+  };
+}
+
+export function scanStatusLabel(status) {
+  if (status === "partial") return "Partial";
+  if (status === "failed") return "Failed";
+  return "Complete";
 }
 
 export function submitScan(files) {

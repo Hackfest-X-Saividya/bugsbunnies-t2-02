@@ -25,7 +25,7 @@ export default function Dashboard() {
   const endpointCount = scan.endpoints.length;
   return <div className="page-content">
     <PageHeader eyebrow="OVERVIEW / SECURITY POSTURE" title="Security dashboard" description={`A connected view of findings and API routes for ${scan.projectName}.`} action={<Link to="/scan" className="button button-primary"><Braces size={16} /> New scan</Link>} />
-    <DemoNotice />
+    {scan.isDemo && <DemoNotice />}
     <div className="stats-grid">
       <StatCard label="Total vulnerabilities" value={scan.findings.length} note="Across all severities" icon={ShieldAlert} />
       <StatCard label="High severity" value={counts[0].value} note="Prioritize review" icon={AlertTriangle} tone="red" />
