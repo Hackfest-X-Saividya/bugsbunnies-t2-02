@@ -115,6 +115,35 @@ python -m pytest
    internal model. Endpoint correlation is currently undefined and requires
    agreement with the API-intelligence owner.
 
+### API Intelligence handoff
+
+This repository currently contains no API Intelligence module or
+`analyze_project` implementation. Consequently, there are no verified
+`routes`, `unmatched_findings`, `errors`, `limitations`, or
+`openapi_comparison` result fields to merge today.
+
+When that module is available, a future integration layer may combine its
+results with `ScanResult.findings` only after the team agrees on the public
+contract:
+
+- `routes` can provide independently observed endpoint evidence;
+- `unmatched_findings` can identify findings that have no endpoint association;
+- `errors` and `limitations` must remain distinguishable from scanner findings;
+- `openapi_comparison` can describe specification differences, not vulnerability
+  findings by itself.
+
+The integration must not fabricate endpoint associations or expose these
+internal names as public response fields without an approved schema.
+
+Before API or frontend integration, the team must decide:
+
+1. HTTP endpoint and method;
+2. request or upload format and size limits;
+3. public response schema and version;
+4. allowed severity values;
+5. public error format and HTTP status mapping; and
+6. whether API Intelligence data belongs in the initial response.
+
 ## Limitations and roadmap
 
 Bandit can produce false positives and false negatives and cannot guarantee
