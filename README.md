@@ -91,11 +91,19 @@ sets `execution_allowed` to `False` and authorizes static analysis only.
 ## Source formats and analyzers
 
 The API accepts `.zip` archives, individual source files, and repeated
-multi-file inputs. Supported extensions are Python, JavaScript/TypeScript,
-Java, Go, PHP, Ruby, C/C++, C#, Rust, Swift, Kotlin, Scala, and shell source
-files. Python is analyzed with Bandit. Non-Python files are routed through an
-optional Semgrep adapter; without Semgrep, those files return an explicit
-analyzer-unavailable/partial result and are never reported as clean.
+multi-file inputs. Source extensions are Python, JavaScript/TypeScript, Java,
+Go, PHP, Ruby, C/C++, C#, Rust, Swift, Kotlin, Scala, and shell files.
+Configuration and dependency files such as JSON/YAML/TOML/XML, Dockerfile,
+`requirements.txt`, `pyproject.toml`, `package.json`, lockfiles, `go.mod`, and
+`Cargo.toml` may be uploaded as supplemental review inputs. They are accepted
+but are not security-analyzed by the current static analyzers.
+
+Python source is analyzed with Bandit. Non-Python source files are routed
+through an optional Semgrep adapter; without Semgrep, those files return an
+explicit analyzer-unavailable/partial result and are never reported as clean.
+The response lists analyzed, supplemental, and unsupported files separately.
+Real `.env` files are rejected; only explicitly named templates such as
+`.env.example` are accepted.
 
 Install the optional analyzer separately when required:
 
@@ -104,8 +112,10 @@ python -m pip install semgrep
 ```
 
 The scanner does not execute, import, build, or run uploaded source. It rejects
-binary source files, invalid UTF-8, unsafe archive entries, empty uploads, and
-unsupported extensions.
+binary files, invalid UTF-8, unsafe archive entries, empty uploads, and
+unsupported individual files. ZIP uploads retain traversal, symlink, duplicate
+path, entry-count, and decompressed-size protections. A ZIP must be uploaded
+alone; individual source and supplemental files can be submitted together.
 
 ## Limitations and roadmap
 

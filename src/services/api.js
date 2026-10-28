@@ -25,9 +25,13 @@ async function request(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-export function submitScan(file) {
+export function submitScan(files) {
   const formData = new FormData();
-  formData.append("file", file);
+  const uploads = Array.isArray(files) ? files : [files];
+  for (const file of uploads) {
+    const field = uploads.length === 1 && file.name.toLowerCase().endsWith(".zip") ? "file" : "files";
+    formData.append(field, file);
+  }
   return request("/api/scan", { method: "POST", body: formData });
 }
 
