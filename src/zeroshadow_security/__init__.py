@@ -1,6 +1,7 @@
 """ZeroShadow AI security intelligence primitives."""
 
 from .adapter import to_security_errors, to_security_findings
+from .analyzers import SUPPORTED_EXTENSIONS, accepted_extensions, language_for_path, scan_project
 from .malware import (
     ArchiveInspection,
     ArchiveValidationError,
@@ -36,6 +37,10 @@ __all__ = [
     "ScanStatus",
     "ScannerError",
     "SecurityIntelligenceService",
+    "SUPPORTED_EXTENSIONS",
+    "accepted_extensions",
+    "language_for_path",
+    "scan_project",
     "ArchiveInspection",
     "ArchiveValidationError",
     "ClamAVScanner",

@@ -9,6 +9,7 @@ from typing import Any
 
 class ScanStatus(str, Enum):
     SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
     FAILED = "failed"
 
 
@@ -41,6 +42,8 @@ class Finding:
     risk_exposure: str | None = None
     risk_evidence: str | None = None
     risk_explanation: str | None = None
+    language: str | None = None
+    analyzer: str | None = None
 
     def with_risk_assessment(
         self,

@@ -43,6 +43,8 @@ def _finding_to_v1(finding: Finding) -> dict[str, Any]:
         "risk_evidence": finding.risk_evidence,
         "risk_explanation": finding.risk_explanation,
         "cwe": finding.cwe,
+        "language": finding.language,
+        "analyzer": finding.analyzer,
     }
     return {
         "rule_id": finding.rule_id,
