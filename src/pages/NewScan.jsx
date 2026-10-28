@@ -4,9 +4,9 @@ import { AlertCircle, ArrowRight, Check, FileArchive, FolderUp, LoaderCircle, Sh
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
 import { isDemoMode, getScanFindings, getScanRoutes, submitScan } from "../services/api.js";
+import { validateProjectFile } from "../services/projectFileValidation.js";
 import { endpoints, findings } from "../data/mockData.js";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const secureEndpoints = endpoints.filter((endpoint) => endpoint.documented).map((endpoint) => ({
   ...endpoint,
   findings: [],
@@ -54,14 +54,10 @@ export default function NewScan() {
     setError("");
     setStatus("");
     if (!candidate) return;
-    if (!candidate.name.toLowerCase().endsWith(".zip")) {
+    const validationError = validateProjectFile(candidate);
+    if (validationError) {
       setFile(null);
-      setError("Choose a ZIP archive containing your Python or FastAPI project.");
-      return;
-    }
-    if (candidate.size > MAX_FILE_SIZE) {
-      setFile(null);
-      setError("This file exceeds the 50 MB limit. Choose a smaller ZIP archive.");
+      setError(validationError);
       return;
     }
     setFile(candidate);
