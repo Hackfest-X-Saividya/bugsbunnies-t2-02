@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import lzma
 import ntpath
 import os
 import re
@@ -273,8 +274,6 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
             "The source upload is not a valid ZIP archive.",
         ) from None
 
-    extracted_total = 0
-    seen_paths: set[str] = set()
     try:
         with archive:
             entries = archive.infolist()
@@ -284,6 +283,9 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
                     "archive_too_large",
                     "The ZIP archive contains too many entries.",
                 )
+            extracted_total = 0
+            seen_paths: set[str] = set()
+            validated_entries: list[tuple[Any, Path, bool]] = []
             for entry in entries:
                 destination, is_directory = _safe_archive_path(root, entry.filename)
                 normalized_key = destination.as_posix().casefold()
@@ -318,6 +320,42 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
                         "The ZIP archive expands beyond the maximum extracted size.",
                     )
                 if is_directory:
+                    if entry.file_size != 0:
+                        raise RequestError(
+                            HTTPStatus.UNPROCESSABLE_ENTITY,
+                            "invalid_zip",
+                            "The ZIP archive contains an invalid directory entry.",
+                        )
+                validated_entries.append((entry, destination, is_directory))
+
+            validated_total = 0
+            for entry, _, _ in validated_entries:
+                actual_total = 0
+                with archive.open(entry) as source:
+                    while True:
+                        chunk = source.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        actual_total += len(chunk)
+                        validated_total += len(chunk)
+                        if (
+                            actual_total > entry.file_size
+                            or validated_total > MAX_EXTRACTED_BYTES
+                        ):
+                            raise RequestError(
+                                HTTPStatus.UNPROCESSABLE_ENTITY,
+                                "invalid_zip",
+                                "A ZIP entry exceeded its declared size.",
+                            )
+                if actual_total != entry.file_size:
+                    raise RequestError(
+                        HTTPStatus.UNPROCESSABLE_ENTITY,
+                        "invalid_zip",
+                        "A ZIP entry did not match its declared size.",
+                    )
+
+            for entry, destination, is_directory in validated_entries:
+                if is_directory:
                     destination.mkdir(parents=True, exist_ok=True)
                     continue
 
@@ -344,7 +382,15 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
                     )
     except RequestError:
         raise
-    except (BadZipFile, EOFError, OSError, RuntimeError, NotImplementedError, zlib.error):
+    except (
+        BadZipFile,
+        EOFError,
+        OSError,
+        RuntimeError,
+        NotImplementedError,
+        lzma.LZMAError,
+        zlib.error,
+    ):
         raise RequestError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "invalid_zip",
