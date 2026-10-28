@@ -21,6 +21,18 @@ npm run dev
 The backend listens on `http://127.0.0.1:8000` and the Vite frontend listens
 on `http://localhost:5173`.
 
+On Windows, the checked-in helper starts both services with the repository
+virtual environment and verifies backend readiness first:
+
+```powershell
+.\start-local.ps1
+```
+
+If starting services manually, use `.\.venv\Scripts\python.exe -m
+api_intelligence.http_api` when the virtual environment exists. Starting Vite
+before the backend is ready can produce a connection error; restart the
+frontend only if `.env` or `VITE_API_BASE_URL` changes.
+
 The app starts in **demo mode** when `VITE_API_BASE_URL` is not set. The built-in insecure and secure FastAPI samples load clearly labeled demonstration data. Uploaded archives are not sent anywhere in demo mode.
 
 To enable backend integration, copy `.env.example` to `.env`, set
