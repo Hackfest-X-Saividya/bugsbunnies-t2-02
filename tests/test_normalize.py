@@ -1,6 +1,35 @@
 from zeroshadow_security.normalize import normalize_bandit_results
 
 
+def test_preserves_bandit_high_medium_and_low_severities():
+    findings = normalize_bandit_results(
+        {
+            "results": [
+                {"test_id": "B001", "filename": "high.py", "issue_severity": "HIGH"},
+                {"test_id": "B002", "filename": "medium.py", "issue_severity": "MEDIUM"},
+                {"test_id": "B003", "filename": "low.py", "issue_severity": "LOW"},
+            ]
+        }
+    )
+    assert [finding.severity for finding in findings] == ["HIGH", "MEDIUM", "LOW"]
+
+
+def test_confidence_does_not_change_bandit_severity():
+    findings = normalize_bandit_results(
+        {
+            "results": [
+                {
+                    "test_id": "B105",
+                    "filename": "app.py",
+                    "issue_severity": "LOW",
+                    "issue_confidence": "HIGH",
+                }
+            ]
+        }
+    )
+    assert findings[0].severity == "LOW"
+
+
 def test_normalizes_finding_without_fabricating_optional_values():
     findings = normalize_bandit_results(
         {
