@@ -3,10 +3,6 @@ import { ArrowDownToLine, Printer, ShieldCheck } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, PageHeader, SeverityBadge } from "../components/Primitives.jsx";
 
-function csvCell(value) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
-}
-
 export default function Reports() {
   const { scan } = useScan();
   const [downloadError, setDownloadError] = useState("");
@@ -15,17 +11,14 @@ export default function Reports() {
     count: scan.findings.filter((finding) => finding.severity === severity).length,
   })), [scan.findings]);
   const affected = new Set(scan.findings.map((item) => item.endpointId).filter(Boolean)).size;
-  const downloadReport = () => {
+  const downloadReport = async () => {
     try {
-      const rows = [
-        ["ID", "Title", "Severity", "Status", "File", "Line", "Endpoint", "Description", "Mitigation", "Detection source"],
-        ...scan.findings.map((item) => [item.id, item.title, item.severity, item.status, item.filePath, item.line, item.endpoint, item.description, item.mitigation, item.source]),
-      ];
-      const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const { createReportPdf } = await import("../services/reportPdf.js");
+      const pdf = createReportPdf(scan);
+      const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = `shadowguard-${scan.id}-report.csv`;
+      link.download = `shadowguard-${scan.id}-report.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -36,7 +29,7 @@ export default function Reports() {
     }
   };
   return <div className="page-content report-page">
-    <PageHeader eyebrow="WORKSPACE / EXPORTS" title="Security report" description={`A review-ready summary of the ${scan.projectName} analysis.`} action={<div className="report-actions"><button className="button button-subtle" onClick={() => window.print()}><Printer size={15} /> Print report</button><button className="button button-primary" onClick={downloadReport}><ArrowDownToLine size={15} /> Download CSV</button></div>} />
+    <PageHeader eyebrow="WORKSPACE / EXPORTS" title="Security report" description={`A review-ready summary of the ${scan.projectName} analysis.`} action={<div className="report-actions"><button className="button button-subtle" onClick={() => window.print()}><Printer size={15} /> Print report</button><button className="button button-primary" onClick={downloadReport}><ArrowDownToLine size={15} /> Download PDF</button></div>} />
     {scan.isDemo && <DemoNotice />}
     {downloadError && <div className="form-message form-error" role="alert">{downloadError}</div>}
     <div className="report-cover panel"><div><div className="report-mark"><ShieldCheck size={23} /></div><div className="eyebrow">{scan.isDemo ? "DEMONSTRATION REPORT" : "SCAN REPORT"} · {scan.id}</div><h2>{scan.projectName}</h2><p>Application security analysis summary</p></div><div className="report-date"><span>REPORT GENERATED</span><strong>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date())}</strong><span>STATUS · {scan.status}</span></div></div>
