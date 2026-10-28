@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { resolveFindingRating, SEVERITY_ORDER } from "./findingRating.js";
+import { formatFindingRating, resolveFindingRating, SEVERITY_ORDER } from "./findingRating.js";
 
 const PAGE_MARGIN = 18;
 const FOOTER_SPACE = 20;
@@ -109,16 +109,26 @@ export function createReportPdf(scan, generatedAt = new Date()) {
     "ASSESSMENT DISCLAIMER",
     "Scanner output identifies potential risks, not confirmed vulnerabilities. Validate findings with the complete source and deployment context.",
   );
+  if (scan.securityFindingsAvailable === false) {
+    addField(
+      "SCANNER COVERAGE",
+      "This API Intelligence endpoint performs route discovery only. Security findings were not assessed; an empty findings list does not mean the project is secure.",
+    );
+  }
   addSectionTitle(`Detailed findings (${findings.length})`);
 
   if (findings.length === 0) {
-    addField("RESULT", "No scanner findings are included in this scan.");
+    addField(
+      "RESULT",
+      scan.securityFindingsAvailable === false
+        ? "Security findings were not assessed by this API Intelligence endpoint."
+        : "No scanner findings are included in this scan.",
+    );
   } else {
     const fields = [
       ["ID", "id"],
       ["Title", "title"],
-      ["Severity", null],
-      ["CVSS 4.0 calculated score", null],
+      ["Severity rating", null],
       ["CVSS 4.0 vector", null],
       ["Status", "status"],
       ["File", "filePath"],
@@ -136,12 +146,8 @@ export function createReportPdf(scan, generatedAt = new Date()) {
       const rating = resolveFindingRating(finding);
       addSectionTitle(`Finding ${index + 1}: ${displayValue(finding.title)}`);
       fields.forEach(([label, key]) => {
-        if (label === "Severity") {
-          addField(label, rating.severity);
-        } else if (label === "CVSS 4.0 calculated score") {
-          addField(label, rating.cvssScore === null
-            ? rating.scoreNote
-            : rating.cvssScore.toFixed(1));
+        if (label === "Severity rating") {
+          addField(label, formatFindingRating(rating));
         } else if (label === "CVSS 4.0 vector") {
           addField(label, rating.cvssVector);
         } else {

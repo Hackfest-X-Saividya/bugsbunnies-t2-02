@@ -7,6 +7,14 @@ const KNOWN_SEVERITIES = new Set([
   "Informational",
 ]);
 
+export const ESTIMATED_SEVERITY_SCORES = {
+  Critical: 9.5,
+  High: 8.0,
+  Medium: 5.5,
+  Low: 2.5,
+  None: 0.0,
+};
+
 export function severityFromCvssScore(score) {
   if (
     typeof score !== "number"
@@ -36,6 +44,8 @@ export function resolveFindingRating(finding) {
       severity: "Informational",
       cvssScore: null,
       cvssVector: null,
+      numericScore: null,
+      scoreSource: null,
       scoreNote: "Informational findings are not assigned a CVSS score.",
     };
   }
@@ -56,6 +66,8 @@ export function resolveFindingRating(finding) {
       severity: scoredSeverity,
       cvssScore,
       cvssVector,
+      numericScore: cvssScore,
+      scoreSource: "CVSS 4.0",
       scoreNote: "",
     };
   }
@@ -71,9 +83,35 @@ export function resolveFindingRating(finding) {
     severity,
     cvssScore: null,
     cvssVector: null,
+    numericScore: ESTIMATED_SEVERITY_SCORES[severity] ?? null,
+    scoreSource: ESTIMATED_SEVERITY_SCORES[severity] === undefined
+      ? null
+      : "Estimated",
     scoreNote: severity === "Informational"
       ? "Informational findings are not assigned a CVSS score."
-      : "CVSS 4.0 score unavailable; no valid backend-calculated CVSS rating was supplied.",
+      : ESTIMATED_SEVERITY_SCORES[severity] !== undefined
+        ? "Estimated severity value based on category; this is not a CVSS score."
+        : "No severity or CVSS rating is available for this finding.",
+  };
+}
+
+export function formatFindingRating(rating) {
+  if (rating.numericScore === null) return `${rating.severity} (Not rated)`;
+  return `${rating.severity} (${rating.scoreSource}: ${rating.numericScore.toFixed(1)})`;
+}
+
+export function getFindingRatingPresentation(finding) {
+  const rating = resolveFindingRating(finding);
+  return {
+    rating,
+    scoreLabel: rating.numericScore === null
+      ? "Not rated"
+      : `${rating.scoreSource} · ${rating.numericScore.toFixed(1)}`,
+    scoreDescription: rating.scoreSource === "CVSS 4.0"
+      ? "CVSS 4.0 score calculated from the validated vector by the backend."
+      : rating.scoreSource === "Estimated"
+        ? "Estimated severity score based on the finding's severity label; this is not a CVSS score."
+        : rating.scoreNote,
   };
 }
 

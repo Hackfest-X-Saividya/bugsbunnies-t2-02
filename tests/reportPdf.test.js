@@ -43,7 +43,7 @@ test("creates a valid PDF report with the complete finding documentation", () =>
     "User input is inserted into a query.",
     "Use a parameterized query.",
     "Static scanner",
-    "CVSS 4.0 score unavailable",
+    "High \\(Estimated: 8.0\\)",
     "Evidence",
     "Medium",
   ]) {
@@ -64,9 +64,8 @@ test("shows informational findings without inventing CVSS ratings", () => {
     endpoints: [],
   })).toString("latin1");
 
-  assert.ok(pdf.includes("Informational findings are not assigned a CVSS score."));
+  assert.ok(pdf.includes("Informational \\(Not rated\\)"));
   assert.ok(pdf.includes("INFORMATIONAL FINDINGS"));
-  assert.ok(pdf.includes("CVSS 4.0 calculated score"));
 });
 
 test("includes backend-calculated CVSS score and matching severity in the PDF", () => {
@@ -87,9 +86,20 @@ test("includes backend-calculated CVSS score and matching severity in the PDF", 
   })).toString("latin1");
 
   assert.ok(content.includes("Critical"));
-  assert.ok(content.includes("CVSS 4.0 calculated score"));
-  assert.ok(content.includes("9.9"));
+  assert.ok(content.includes("Critical \\(CVSS 4.0: 9.9\\)"));
   assert.ok(content.includes("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:N"));
+});
+
+test("reports the same estimated rating for legacy severity-only findings", () => {
+  const content = Buffer.from(createReportPdf({
+    id: "estimated-scan",
+    projectName: "estimated-project",
+    status: "Completed",
+    findings: [{ id: "HIGH-1", title: "Legacy finding", severity: "HIGH" }],
+    endpoints: [],
+  })).toString("latin1");
+
+  assert.ok(content.includes("High \\(Estimated: 8.0\\)"));
 });
 
 test("creates a PDF report for scans with no findings", () => {
@@ -104,6 +114,21 @@ test("creates a PDF report for scans with no findings", () => {
 
   assert.equal(content.startsWith("%PDF-"), true);
   assert.ok(content.includes("No scanner findings are included in this scan."));
+});
+
+test("clearly reports that security findings were not assessed by API Intelligence", () => {
+  const content = Buffer.from(createReportPdf({
+    id: "route-scan",
+    projectName: "route-project",
+    status: "Completed",
+    findings: [],
+    endpoints: [],
+    securityFindingsAvailable: false,
+  })).toString("latin1");
+
+  assert.ok(content.includes("Security findings were not assessed by this API Intelligence endpoint."));
+  assert.ok(content.includes("an empty findings list"));
+  assert.ok(content.includes("does not mean the project is secure."));
 });
 
 test("paginates long finding fields without wasting a page per line", () => {

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, FindingRating, MethodBadge, PageHeader } from "../components/Primitives.jsx";
+import { DemoNotice, FindingRating, LiveScanNotice, MethodBadge, PageHeader } from "../components/Primitives.jsx";
 import CodeViewer from "../components/CodeViewer.jsx";
 import { explainFinding } from "../services/api.js";
 
@@ -48,11 +48,12 @@ export default function EndpointDetails() {
   return <div className="page-content">
     <Link className="back-link" to="/explorer"><ArrowLeft size={15} /> Back to API Explorer</Link>
     {scan.isDemo && <DemoNotice />}
+    <LiveScanNotice scan={scan} />
     <div className="endpoint-title panel">
       <div className="endpoint-title-main"><div className="endpoint-symbol"><FileCode2 size={20} /></div><div><div className="eyebrow">ENDPOINT RISK X-RAY <span className="endpoint-id">· {endpoint.id}</span></div><div className="endpoint-heading"><MethodBadge method={endpoint.method} /><h1>{endpoint.path}</h1></div><p>{endpoint.summary}</p></div></div>
-      <div className={`doc-status ${endpoint.documented ? "doc-ok" : "doc-missing"}`}><span />{endpoint.documented ? "Documented" : "Documentation mismatch"}</div>
+      <div className={`doc-status ${endpoint.documented === null ? "doc-unchecked" : endpoint.documented ? "doc-ok" : "doc-missing"}`}><span />{endpoint.documented === null ? "Not compared" : endpoint.documented ? "Documented" : "Documentation mismatch"}</div>
     </div>
-    {!endpoint.documented && <div className="mismatch-callout"><div className="callout-icon"><ShieldAlert size={17} /></div><div><strong>Undocumented route — documentation mismatch</strong><span>This is a documentation gap and is not, by itself, a confirmed vulnerability.</span></div></div>}
+    {endpoint.documented === false && <div className="mismatch-callout"><div className="callout-icon"><ShieldAlert size={17} /></div><div><strong>Undocumented route — documentation mismatch</strong><span>This is a documentation gap and is not, by itself, a confirmed vulnerability.</span></div></div>}
     <div className="endpoint-meta-grid">
       <div className="meta-card"><span>Source location</span><strong className="mono">{endpoint.filePath}:{endpoint.line}</strong></div>
       <div className="meta-card"><span>Related findings</span><strong>{related.length} <small>{related.length === 1 ? "potential signal" : "potential signals"}</small></strong></div>

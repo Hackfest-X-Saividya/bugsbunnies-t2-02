@@ -38,7 +38,7 @@ class ScanEndpointTests(unittest.TestCase):
         parts.append(f"--{self.boundary}--\r\n".encode())
         return b"".join(parts)
 
-    def request(self, fields, body=None, method="POST", path=ENDPOINT_PATH):
+    def request(self, fields, body=None, method="POST", path=ENDPOINT_PATH, origin=None):
         request_body = body if body is not None else self.multipart_body(fields)
         environ = {}
         setup_testing_defaults(environ)
@@ -51,6 +51,8 @@ class ScanEndpointTests(unittest.TestCase):
                 "wsgi.input": io.BytesIO(request_body),
             }
         )
+        if origin is not None:
+            environ["HTTP_ORIGIN"] = origin
         captured = {}
 
         def start_response(status, headers):
@@ -86,6 +88,37 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(result["body"]["unmatched_findings"], [])
         self.assertIsNone(result["body"]["openapi_comparison"])
         self.assertEqual(result["body"]["errors"], [])
+
+    def test_allows_cors_for_local_frontend_origin(self):
+        source_zip = self.zip_bytes({"app.py": "from fastapi import FastAPI\napp = FastAPI()\n"})
+        result = self.request(
+            [("source_zip", "project.zip", source_zip, "application/zip")],
+            origin="http://localhost:5173",
+        )
+
+        self.assertEqual(result["headers"]["Access-Control-Allow-Origin"], "http://localhost:5173")
+        self.assertEqual(result["headers"]["Vary"], "Origin")
+
+    def test_supports_local_frontend_cors_preflight(self):
+        result = self.request(
+            [],
+            method="OPTIONS",
+            origin="http://127.0.0.1:5173",
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(result["headers"]["Access-Control-Allow-Origin"], "http://127.0.0.1:5173")
+        self.assertEqual(result["headers"]["Access-Control-Allow-Methods"], "POST, OPTIONS")
+        self.assertEqual(result["headers"]["Access-Control-Allow-Headers"], "Content-Type")
+
+    def test_does_not_allow_cors_from_non_local_origin(self):
+        result = self.request(
+            [],
+            method="OPTIONS",
+            origin="https://example.test",
+        )
+
+        self.assertNotIn("Access-Control-Allow-Origin", result["headers"])
 
     def test_accepts_optional_openapi_json(self):
         source_zip = self.zip_bytes(

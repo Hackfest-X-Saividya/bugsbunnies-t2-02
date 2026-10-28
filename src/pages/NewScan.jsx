@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, Check, FileArchive, FolderUp, LoaderCircle, Shield, Sparkles } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
-import { isDemoMode, getScanFindings, getScanRoutes, submitScan } from "../services/api.js";
+import { isDemoMode, submitScan } from "../services/api.js";
 import { validateProjectFile } from "../services/projectFileValidation.js";
+import { adaptApiIntelligenceResponse } from "../services/apiIntelligenceIntegration.js";
 import { endpoints, findings } from "../data/mockData.js";
 
 const secureEndpoints = endpoints.filter((endpoint) => endpoint.documented).map((endpoint) => ({
@@ -73,22 +74,12 @@ export default function NewScan() {
     setError("");
     setStatus("Uploading archive securely to your configured backend…");
     try {
-      const created = await submitScan(file);
-      const scanId = created?.id ?? created?.scan_id;
-      if (!scanId) throw new Error("The backend did not return a scan id.");
-      setStatus("Collecting scan findings and discovered routes…");
-      const [realFindings, realEndpoints] = await Promise.all([getScanFindings(scanId), getScanRoutes(scanId)]);
-      if (!Array.isArray(realFindings) || !Array.isArray(realEndpoints)) {
-        throw new Error("The backend response must include findings and routes as arrays.");
-      }
-      setScan({
-        id: scanId,
-        projectName: file.name.replace(/\.zip$/i, ""),
-        status: "Complete",
-        findings: realFindings,
-        endpoints: realEndpoints,
-        isDemo: false,
-      });
+      const response = await submitScan(file);
+      const nextScan = adaptApiIntelligenceResponse(
+        response,
+        file.name.replace(/\.zip$/i, ""),
+      );
+      setScan(nextScan);
       navigate("/dashboard");
     } catch (requestError) {
       setError(requestError.message || "The scan could not be completed.");

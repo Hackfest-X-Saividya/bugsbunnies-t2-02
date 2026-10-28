@@ -1,5 +1,5 @@
 import { ArrowUpRight, CircleHelp, Info } from "lucide-react";
-import { resolveFindingRating } from "../services/findingRating.js";
+import { getFindingRatingPresentation } from "../services/findingRating.js";
 
 export function PageHeader({ eyebrow, title, description, action }) {
   return (
@@ -18,6 +18,30 @@ export function DemoNotice({ children = "Demo data · Results shown are illustra
   return <div className="demo-notice"><Info size={15} /><span>{children}</span></div>;
 }
 
+export function LiveScanNotice({ scan }) {
+  if (scan.isDemo || scan.securityFindingsAvailable !== false) return null;
+  const analysisIssues = [
+    ...(scan.scanErrors ?? []).map((issue) => issue.message),
+    ...(scan.scanLimitations ?? []).map((issue) => issue.message),
+  ].filter((message) => typeof message === "string" && message);
+  return (
+    <>
+      <DemoNotice>
+        API Intelligence completed route discovery only. This backend does not run a security scanner, so no security findings were assessed; an empty findings list does not mean the project is secure.
+      </DemoNotice>
+      {analysisIssues.length > 0 && (
+        <div className="mismatch-callout">
+          <div className="callout-icon"><Info size={17} /></div>
+          <div>
+            <strong>Some source files or routes need review</strong>
+            {analysisIssues.map((message, index) => <span key={`${index}-${message}`}>{message}</span>)}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SeverityBadge({ severity }) {
   const label = severity || "Unrated";
   const key = label.toLowerCase();
@@ -25,14 +49,16 @@ export function SeverityBadge({ severity }) {
 }
 
 export function FindingRating({ finding, compact = false }) {
-  const rating = resolveFindingRating(finding);
+  const { rating, scoreLabel, scoreDescription } = getFindingRatingPresentation(finding);
   return (
     <span className={`finding-rating${compact ? " finding-rating-compact" : ""}`}>
       <SeverityBadge severity={rating.severity} />
-      {rating.cvssScore !== null
-        ? <span className="cvss-score" title="CVSS 4.0 score calculated from the validated vector by the backend.">CVSS 4.0 calculated · {rating.cvssScore.toFixed(1)}</span>
-        : <span className="cvss-unavailable" title={rating.scoreNote} aria-label={rating.scoreNote}>
-          {rating.severity === "Informational" ? "CVSS 4.0 not applicable" : "CVSS 4.0 unavailable"}
+      {rating.numericScore !== null
+        ? <span className={`rating-score${rating.scoreSource === "Estimated" ? " rating-score-estimated" : ""}`} title={scoreDescription}>
+          {scoreLabel}
+        </span>
+        : <span className="cvss-unavailable" title={scoreDescription} aria-label={scoreDescription}>
+          {scoreLabel}
         </span>}
     </span>
   );
