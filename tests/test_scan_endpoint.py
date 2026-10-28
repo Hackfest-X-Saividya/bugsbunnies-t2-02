@@ -172,6 +172,40 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertTrue(any(error["code"] == "analyzer_unavailable" for error in result["body"]["errors"]))
         self.assertFalse(result["body"]["summary"]["security_findings_available"])
 
+    def test_accepts_mixed_source_and_supplemental_files_without_claiming_full_analysis(self):
+        result = self.request(
+            [
+                ("files", "app.py", b"print('safe')\n", "text/x-python"),
+                ("files", "requirements.txt", b"bandit==1.9.4\n", "text/plain"),
+                ("files", "config.yaml", b"debug: false\n", "text/yaml"),
+            ],
+            path=ENDPOINT_PATH,
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        body = result["body"]
+        self.assertEqual(body["status"], "partial")
+        self.assertEqual(body["summary"]["security_findings"], 0)
+        self.assertEqual(body["summary"]["supplemental_files"], 2)
+        self.assertEqual(body["summary"]["accepted_files"], 3)
+        self.assertEqual(set(body["supplemental_files"]), {"requirements.txt", "config.yaml"})
+        analyzed = next(item for item in body["accepted_files"] if item["path"] == "app.py")
+        self.assertEqual(analyzed["analysis_status"], "analyzed")
+
+    def test_rejects_real_env_files_but_accepts_env_templates(self):
+        rejected = self.request(
+            [("files", ".env", b"SECRET=do-not-log\n", "text/plain")],
+            path=ENDPOINT_PATH,
+        )
+        accepted = self.request(
+            [("files", ".env.example", b"SECRET=\n", "text/plain")],
+            path=ENDPOINT_PATH,
+        )
+
+        self.assertEqual(rejected["body"]["error"]["kind"], "env_file_not_allowed")
+        self.assertEqual(accepted["body"]["status"], "partial")
+        self.assertEqual(accepted["body"]["supplemental_files"], [".env.example"])
+
     def test_rejects_unsupported_empty_and_binary_source_files(self):
         unsupported = self.request(
             [("source_file", "notes.md", b"# not source", "text/markdown")],

@@ -29,6 +29,16 @@ from .review import (
 )
 from .risk import assess_risk, sort_findings_by_priority, summarize_risk_levels
 from .service import SecurityIntelligenceService
+from .upload_formats import (
+    CONFIGURATION,
+    DEPENDENCY_MANIFEST,
+    PROJECT_ARCHIVE,
+    SOURCE,
+    UNSUPPORTED,
+    UploadFileInfo,
+    classify_filename,
+    describe_file,
+)
 from .workflow import UploadScanWorkflow, UploadWorkflowResult
 
 __all__ = [
@@ -70,4 +80,12 @@ __all__ = [
     "summarize_risk_levels",
     "to_security_errors",
     "to_security_findings",
+    "CONFIGURATION",
+    "DEPENDENCY_MANIFEST",
+    "PROJECT_ARCHIVE",
+    "SOURCE",
+    "UNSUPPORTED",
+    "UploadFileInfo",
+    "classify_filename",
+    "describe_file",
 ]

@@ -24,6 +24,14 @@ from zipfile import BadZipFile, ZipFile
 from .route_discovery import analyze_project
 from zeroshadow_security.analyzers import accepted_extensions, language_for_path, scan_project
 from zeroshadow_security.adapter import to_security_errors, to_security_findings
+from zeroshadow_security.upload_formats import (
+    PROJECT_ARCHIVE,
+    SOURCE,
+    UNSUPPORTED,
+    classify_filename,
+    describe_file,
+    is_safe_upload_name,
+)
 
 LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
@@ -44,6 +52,7 @@ MAX_STORED_SCANS = 100
 MAX_SOURCE_FILES = 50
 MAX_SOURCE_FILE_BYTES = 5 * 1024 * 1024
 ACCEPTED_EXTENSIONS = set(accepted_extensions())
+MAX_UPLOAD_FILES = 50
 
 
 @dataclass(frozen=True)
@@ -272,6 +281,12 @@ def _parse_multipart(content_type: str, body: bytes) -> UploadBundle:
             openapi_json = payload
             openapi_filename = filename
             continue
+        if field_name != "source_zip" and not is_safe_upload_name(filename):
+            raise RequestError(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                "env_file_not_allowed",
+                "Only explicitly named environment templates such as .env.example are accepted.",
+            )
         if not payload:
             raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "empty_source_file", "Uploaded source files must not be empty.")
         is_archive = field_name == "source_zip" or (field_name == "file" and Path(filename).suffix.lower() == ".zip")
@@ -279,6 +294,16 @@ def _parse_multipart(content_type: str, body: bytes) -> UploadBundle:
             raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "source_file_too_large", "A source file exceeds the configured size limit.")
         if not is_archive and b"\x00" in payload:
             raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "Binary files are not accepted as source code.")
+        classification = classify_filename(filename)
+        is_archive = classification == PROJECT_ARCHIVE or (
+            field_name == "file" and Path(filename).suffix.lower() == ".zip"
+        )
+        if not is_archive and classification == UNSUPPORTED:
+            raise RequestError(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                "unsupported_file_type",
+                "The uploaded file type is not supported as source or supplemental input.",
+            )
         source = UploadedSource(filename, payload)
         if field_name == "source_zip" or (field_name == "file" and Path(filename).suffix.lower() == ".zip"):
             if source_zip is not None:
@@ -301,12 +326,8 @@ def _parse_multipart(content_type: str, body: bytes) -> UploadBundle:
             "unsupported_file_type",
             "The source_zip upload must have a .zip extension.",
         )
-    if len(source_files) > MAX_SOURCE_FILES:
+    if len(source_files) > MAX_UPLOAD_FILES:
         raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "too_many_source_files", "Too many source files were uploaded.")
-    for source in source_files:
-        if Path(source.filename).suffix.lower() not in ACCEPTED_EXTENSIONS or language_for_path(source.filename) is None:
-            accepted = ", ".join(sorted(ACCEPTED_EXTENSIONS))
-            raise RequestError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_file_type", f"Unsupported source extension. Accepted extensions: {accepted}.")
     if openapi_json is not None:
         if len(openapi_json) > MAX_OPENAPI_BYTES:
             raise RequestError(
@@ -502,8 +523,8 @@ def _write_source_files(root: Path, sources: tuple[UploadedSource, ...]) -> None
                 "The source upload contains duplicate file paths.",
             )
         seen_paths.add(normalized_key)
-        if destination.suffix.lower() not in ACCEPTED_EXTENSIONS:
-            raise RequestError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_file_type", "The uploaded file is not a supported source-code format.")
+        if classify_filename(source.filename) == UNSUPPORTED:
+            raise RequestError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_file_type", "The uploaded file type is not supported.")
         try:
             source.content.decode("utf-8")
         except UnicodeDecodeError:
@@ -517,15 +538,44 @@ def _write_source_files(root: Path, sources: tuple[UploadedSource, ...]) -> None
 
 def _validate_source_tree(root: Path) -> None:
     for path in root.rglob("*"):
-        if not path.is_file() or language_for_path(path) is None:
+        if not path.is_file():
             continue
         try:
             content = path.read_bytes()
             content.decode("utf-8")
         except (OSError, UnicodeDecodeError):
-            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "A supported source file is not valid UTF-8 text.") from None
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_upload_file", "Uploaded files must be valid UTF-8 text.") from None
         if b"\x00" in content:
-            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "Binary files are not accepted as source code.")
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_upload_file", "Binary or executable files are not accepted.")
+
+
+def _file_metadata(root: Path, security_result: Any) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    accepted: list[dict[str, Any]] = []
+    supplemental: list[str] = []
+    unsupported: list[str] = []
+    analyzer_unavailable = any(error.kind == "analyzer_unavailable" for error in security_result.errors)
+    scanner_failed = security_result.status.value == "failed"
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        info = describe_file(path.relative_to(root).as_posix())
+        if info.classification == UNSUPPORTED:
+            unsupported.append(info.path)
+            continue
+        if info.classification != SOURCE:
+            supplemental.append(info.path)
+            accepted.append({"path": info.path, "classification": info.classification, "analysis_status": "accepted_not_analyzed"})
+            continue
+        unavailable = scanner_failed or (analyzer_unavailable and info.analyzer != "bandit")
+        status = "analysis_unavailable" if unavailable else "analyzed"
+        accepted.append(
+            {
+                "path": info.path,
+                "classification": info.classification,
+                "language": info.language,
+                "analyzer": info.analyzer,
+                "analysis_status": status,
+            }
+        )
+    return accepted, supplemental, unsupported
 
 
 def _scan_bundle(bundle: UploadBundle, openapi_document: dict[str, Any] | None) -> dict[str, Any]:
@@ -536,7 +586,15 @@ def _scan_bundle(bundle: UploadBundle, openapi_document: dict[str, Any] | None) 
         else:
             _write_source_files(root, bundle.source_files)
         _validate_source_tree(root)
-        security_result = scan_project(root)
+        source_paths = [path for path in root.rglob("*") if path.is_file() and classify_filename(path.name) == SOURCE]
+        security_result = scan_project(root) if source_paths else None
+        if security_result is None:
+            from zeroshadow_security.models import ScanResult, ScanStatus, ScannerError
+
+            security_result = ScanResult(
+                ScanStatus.PARTIAL,
+                errors=[ScannerError("No uploaded source files were available for static analysis.", "no_analyzable_source")],
+            )
         security_findings = to_security_findings(security_result)
         for finding in security_findings:
             file_path = finding.get("file_path")
@@ -548,15 +606,23 @@ def _scan_bundle(bundle: UploadBundle, openapi_document: dict[str, Any] | None) 
                 finding["file_path"] = relative_path.as_posix()
         analysis = analyze_project(root, findings=security_findings, openapi_spec=openapi_document)
 
+        accepted_files, supplemental_files, unsupported_files = _file_metadata(root, security_result)
+    scan_status = "completed" if security_result.status.value == "succeeded" and not unsupported_files and not supplemental_files else "partial"
     return {
-        "status": "completed",
+        "status": scan_status,
         "summary": {
             "routes_discovered": len(analysis["routes"]),
             "security_findings_available": security_result.status.value == "succeeded",
             "security_findings": len(security_findings),
             "analysis_status": security_result.status.value,
             "files_scanned": security_result.files_scanned,
+            "accepted_files": len(accepted_files),
+            "supplemental_files": len(supplemental_files),
+            "unsupported_files": len(unsupported_files),
         },
+        "accepted_files": accepted_files,
+        "supplemental_files": supplemental_files,
+        "unsupported_files": unsupported_files,
         "routes": analysis["routes"],
         "findings": security_findings,
         "unmatched_findings": analysis["unmatched_findings"],
