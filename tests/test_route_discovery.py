@@ -180,6 +180,32 @@ class RouteDiscoveryTests(unittest.TestCase):
         self.assertEqual(signals["/unknown"], "authentication_dependency_behavior_unknown")
         self.assertEqual(signals["/none"], "authentication_not_detected_statically")
 
+    def test_authentication_name_matching_avoids_author_false_positive(self):
+        routes = self.routes(
+            "from fastapi import Depends, FastAPI\n"
+            "app = FastAPI()\n"
+            "@app.get('/auth')\n"
+            "def auth_route(user=Depends(require_auth)): pass\n"
+            "@app.get('/authentication')\n"
+            "def authentication_route(user=Depends(authentication_dependency)): pass\n"
+            "@app.get('/authorize')\n"
+            "def authorize_route(user=Depends(authorize_user)): pass\n"
+            "@app.get('/authorization')\n"
+            "def authorization_route(user=Depends(authorization_dependency)): pass\n"
+            "@app.get('/author')\n"
+            "def author_route(user=Depends(author_lookup)): pass\n"
+        )
+        signals = {route["path"]: route["security_signals"][0] for route in routes}
+        detected = "authentication_dependency_detected_statically"
+        self.assertEqual(signals["/auth"], detected)
+        self.assertEqual(signals["/authentication"], detected)
+        self.assertEqual(signals["/authorize"], detected)
+        self.assertEqual(signals["/authorization"], detected)
+        self.assertEqual(
+            signals["/author"],
+            "authentication_dependency_behavior_unknown",
+        )
+
     def test_detects_annotated_security_dependency(self):
         routes = self.routes(
             "from typing import Annotated\n"

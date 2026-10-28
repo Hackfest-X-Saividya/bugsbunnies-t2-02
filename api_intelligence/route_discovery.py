@@ -29,9 +29,9 @@ SKIPPED_DIRECTORIES = {
     "venv",
 }
 AUTH_TOKENS = (
-    "auth",
     "authorize",
     "authentication",
+    "authorization",
     "current_user",
     "jwt",
     "permission",
@@ -186,12 +186,16 @@ def _has_dependency(expression: ast.AST) -> bool:
     return False
 
 
+def _is_authentication_name(name: str) -> bool:
+    return "auth" in name.split("_") or any(token in name for token in AUTH_TOKENS)
+
+
 def _authentication_signal(expressions: list[ast.expr]) -> str:
     if not expressions:
         return "authentication_not_detected_statically"
     if any(_has_dependency(expression) for expression in expressions):
         names = set().union(*(_names(expression) for expression in expressions))
-        if any(token in name for name in names for token in AUTH_TOKENS):
+        if any(_is_authentication_name(name) for name in names):
             return "authentication_dependency_detected_statically"
     return "authentication_dependency_behavior_unknown"
 

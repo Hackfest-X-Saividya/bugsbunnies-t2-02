@@ -66,3 +66,80 @@ Run the tests with:
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+## HTTP scan endpoint
+
+The standard-library WSGI application exposes `POST /api/v1/scan`. Run it for
+local development with:
+
+```powershell
+python -m api_intelligence.http_api
+```
+
+The development server listens on `127.0.0.1:8000`. Send a
+`multipart/form-data` request with a required `source_zip` file field and an
+optional `openapi_json` file field:
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/api/v1/scan `
+  -F "source_zip=@project.zip;type=application/zip" `
+  -F "openapi_json=@openapi.json;type=application/json"
+```
+
+`source_zip` must have a `.zip` filename; `openapi_json`, when provided, must
+have a `.json` filename and contain UTF-8 JSON with a `paths` object. The
+request is limited to 20 MiB, OpenAPI input to 2 MiB, extraction to 100 MiB,
+and 5,000 ZIP entries. ZIP paths must be relative and may not contain parent
+traversal; symbolic links and special files are rejected. Uploaded code is
+never executed, and the temporary extraction directory is removed after
+analysis.
+
+A successful response has this shape:
+
+```json
+{
+  "status": "completed",
+  "summary": {
+    "routes_discovered": 1,
+    "security_findings_available": false
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/items",
+      "handler": "items",
+      "file": "app.py",
+      "line": 3,
+      "handler_range": {
+        "start_line": 3,
+        "end_line": 4
+      },
+      "security_signals": [
+        "authentication_not_detected_statically"
+      ],
+      "findings": []
+    }
+  ],
+  "unmatched_findings": [],
+  "openapi_comparison": null,
+  "errors": [],
+  "limitations": []
+}
+```
+
+The route entries use the internal API Intelligence field names documented
+above. `openapi_comparison` is `null` when no specification was uploaded;
+otherwise it contains the comparison result. `errors` and `limitations` come
+from static route analysis. The endpoint does not include security findings:
+this repository has no security scanner, so `security_findings_available` is
+`false` and route-level `findings` remain empty. Authentication signals are
+heuristics and do not establish whether an endpoint is actually protected.
+
+Request errors use `{"error": {"kind": "...", "message": "..."}}`. The endpoint
+returns `400` for malformed requests, `411` when `Content-Length` is missing
+or invalid, `413` for size limits, `415` for unsupported content or filename
+types, `422` for invalid ZIP/OpenAPI input or unsafe archive paths, `404` for
+unknown paths, `405` for unsupported methods, and `500` for unexpected scan
+failures. This WSGI application is a minimal integration point; production
+deployment still requires a production WSGI server, network controls,
+authentication/authorization, and operational timeouts.
