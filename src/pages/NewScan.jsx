@@ -145,7 +145,7 @@ export default function NewScan() {
           onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFiles(event.dataTransfer.files); }}>
-          <input ref={fileInput} multiple className="sr-only" type="file" accept={ACCEPTED_SOURCE_EXTENSIONS.join(",")} aria-label="Choose source and supplemental files" onChange={(event) => acceptFiles(event.target.files)} />
+          <input ref={fileInput} multiple className="sr-only" type="file" accept={[...ACCEPTED_SOURCE_EXTENSIONS, ...SUPPLEMENTAL_NAMES].join(",")} aria-label="Choose source and supplemental files" onChange={(event) => acceptFiles(event.target.files)} />
           {files.length ? <><div className="drop-icon selected-file"><FileArchive size={23} /></div><strong>{files.length} file{files.length === 1 ? "" : "s"} selected</strong><span>{files.map((item) => item.name).join(", ")}</span><button className="text-button" onClick={() => { setFiles([]); fileInput.current.value = ""; }}>Remove files</button></>
             : <><div className="drop-icon"><FolderUp size={23} /></div><strong>Drop source files or archive here</strong><span>Source, config, and dependency files · Maximum 50 files / 20 MB total</span><button className="button button-outline" onClick={() => fileInput.current?.click()}>Browse files</button></>}
         </div>
