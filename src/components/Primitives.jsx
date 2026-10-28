@@ -18,6 +18,30 @@ export function DemoNotice({ children = "Demo data · Results shown are illustra
   return <div className="demo-notice"><Info size={15} /><span>{children}</span></div>;
 }
 
+export function LiveScanNotice({ scan }) {
+  if (scan.isDemo || scan.securityFindingsAvailable !== false) return null;
+  const analysisIssues = [
+    ...(scan.scanErrors ?? []).map((issue) => issue.message),
+    ...(scan.scanLimitations ?? []).map((issue) => issue.message),
+  ].filter((message) => typeof message === "string" && message);
+  return (
+    <>
+      <DemoNotice>
+        API Intelligence completed route discovery only. This backend does not run a security scanner, so no security findings were assessed; an empty findings list does not mean the project is secure.
+      </DemoNotice>
+      {analysisIssues.length > 0 && (
+        <div className="mismatch-callout">
+          <div className="callout-icon"><Info size={17} /></div>
+          <div>
+            <strong>Some source files or routes need review</strong>
+            {analysisIssues.map((message, index) => <span key={`${index}-${message}`}>{message}</span>)}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SeverityBadge({ severity }) {
   const label = severity || "Unrated";
   const key = label.toLowerCase();

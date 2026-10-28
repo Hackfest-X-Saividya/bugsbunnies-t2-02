@@ -1,3 +1,8 @@
+import {
+  checkApiIntelligenceConnection as checkConnection,
+  submitApiIntelligenceScan,
+} from "./apiIntelligenceIntegration.js";
+
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
 
 export const isDemoMode = !configuredBaseUrl;
@@ -21,9 +26,11 @@ async function request(path, options = {}) {
 }
 
 export function submitScan(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return request("/api/scan", { method: "POST", body: formData });
+  return submitApiIntelligenceScan(file, { baseUrl: configuredBaseUrl });
+}
+
+export function checkBackendConnection() {
+  return checkConnection({ baseUrl: configuredBaseUrl });
 }
 
 export function getScan(id) {

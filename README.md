@@ -11,7 +11,17 @@ npm run dev
 
 The app starts in **demo mode** when `VITE_API_BASE_URL` is not set. The built-in insecure and secure FastAPI samples load clearly labeled demonstration data. Uploaded archives are not sent anywhere in demo mode.
 
-To enable backend integration, copy `.env.example` to `.env`, set `VITE_API_BASE_URL` to your FastAPI service, and restart Vite. Live scan requests use the centralized service in `src/services/api.js`; failed backend requests are shown as errors rather than replaced with mock results.
+To enable backend integration, copy `.env.example` to `.env`, set
+`VITE_API_BASE_URL` to your backend base URL, and restart Vite. Live scan
+requests use the centralized service in `src/services/api.js`; failed backend
+requests are shown as errors rather than replaced with mock results.
+
+The local API Intelligence server can be started in a separate terminal with
+`python -m api_intelligence.http_api` and listens on `http://127.0.0.1:8000`.
+Set `VITE_API_BASE_URL=http://127.0.0.1:8000` in `.env`, then restart the Vite
+development server. The frontend submits `source_zip` to `POST /api/v1/scan`.
+This backend discovers routes but does not run a security scanner, so live
+results explicitly report that security findings were not assessed.
 
 ## Frontend features
 

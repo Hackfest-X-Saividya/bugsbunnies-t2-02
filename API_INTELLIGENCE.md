@@ -86,6 +86,11 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/scan `
   -F "openapi_json=@openapi.json;type=application/json"
 ```
 
+For local frontend integration, the development endpoint allows browser origins
+using `http://localhost` or `http://127.0.0.1` with a port. Set the frontend's
+`VITE_API_BASE_URL` to `http://127.0.0.1:8000` and restart Vite. This CORS
+allowlist is intended for local development only.
+
 `source_zip` must have a `.zip` filename; `openapi_json`, when provided, must
 have a `.json` filename and contain UTF-8 JSON with a `paths` object. The
 request is limited to 20 MiB, OpenAPI input to 2 MiB, extraction to 100 MiB,

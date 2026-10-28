@@ -109,10 +109,21 @@ export function createReportPdf(scan, generatedAt = new Date()) {
     "ASSESSMENT DISCLAIMER",
     "Scanner output identifies potential risks, not confirmed vulnerabilities. Validate findings with the complete source and deployment context.",
   );
+  if (scan.securityFindingsAvailable === false) {
+    addField(
+      "SCANNER COVERAGE",
+      "This API Intelligence endpoint performs route discovery only. Security findings were not assessed; an empty findings list does not mean the project is secure.",
+    );
+  }
   addSectionTitle(`Detailed findings (${findings.length})`);
 
   if (findings.length === 0) {
-    addField("RESULT", "No scanner findings are included in this scan.");
+    addField(
+      "RESULT",
+      scan.securityFindingsAvailable === false
+        ? "Security findings were not assessed by this API Intelligence endpoint."
+        : "No scanner findings are included in this scan.",
+    );
   } else {
     const fields = [
       ["ID", "id"],

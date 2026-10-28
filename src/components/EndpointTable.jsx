@@ -20,7 +20,7 @@ export default function EndpointTable({ items }) {
           return <tr key={endpoint.id}>
             <td><MethodBadge method={endpoint.method} /></td>
             <td><Link className="endpoint-link mono" to={`/endpoints/${endpoint.id}`}>{endpoint.path}</Link><div className="muted small">{endpoint.filePath}</div></td>
-            <td><span className={`doc-status ${endpoint.documented ? "doc-ok" : "doc-missing"}`}><span />{endpoint.documented ? "Documented" : "Mismatch · undocumented"}</span></td>
+            <td><span className={`doc-status ${endpoint.documented === null ? "doc-unchecked" : endpoint.documented ? "doc-ok" : "doc-missing"}`}><span />{endpoint.documented === null ? "Not compared" : endpoint.documented ? "Documented" : "Mismatch · undocumented"}</span></td>
             <td>{endpoint.relatedFindings?.length || 0}</td>
             <td>{mostSevere ? <FindingRating finding={mostSevere} compact /> : <span className="muted">None</span>}</td>
             <td><Link className="table-action" to={`/endpoints/${endpoint.id}`} aria-label={`View ${endpoint.method} ${endpoint.path}`}><ArrowUpRight size={16} /></Link></td>

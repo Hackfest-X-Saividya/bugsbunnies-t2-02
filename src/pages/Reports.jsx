@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowDownToLine, Printer, ShieldCheck } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, FindingRating, PageHeader } from "../components/Primitives.jsx";
+import { DemoNotice, FindingRating, LiveScanNotice, PageHeader } from "../components/Primitives.jsx";
 import { resolveFindingRating, SEVERITY_ORDER } from "../services/findingRating.js";
 
 export default function Reports() {
@@ -32,6 +32,7 @@ export default function Reports() {
   return <div className="page-content report-page">
     <PageHeader eyebrow="WORKSPACE / EXPORTS" title="Security report" description={`A review-ready summary of the ${scan.projectName} analysis.`} action={<div className="report-actions"><button className="button button-subtle" onClick={() => window.print()}><Printer size={15} /> Print report</button><button className="button button-primary" onClick={downloadReport}><ArrowDownToLine size={15} /> Download PDF</button></div>} />
     {scan.isDemo && <DemoNotice />}
+    <LiveScanNotice scan={scan} />
     {downloadError && <div className="form-message form-error" role="alert">{downloadError}</div>}
     <div className="report-cover panel"><div><div className="report-mark"><ShieldCheck size={23} /></div><div className="eyebrow">{scan.isDemo ? "DEMONSTRATION REPORT" : "SCAN REPORT"} · {scan.id}</div><h2>{scan.projectName}</h2><p>Application security analysis summary</p></div><div className="report-date"><span>REPORT GENERATED</span><strong>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date())}</strong><span>STATUS · {scan.status}</span></div></div>
     <div className="report-summary-grid">

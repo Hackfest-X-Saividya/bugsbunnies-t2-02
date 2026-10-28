@@ -116,6 +116,21 @@ test("creates a PDF report for scans with no findings", () => {
   assert.ok(content.includes("No scanner findings are included in this scan."));
 });
 
+test("clearly reports that security findings were not assessed by API Intelligence", () => {
+  const content = Buffer.from(createReportPdf({
+    id: "route-scan",
+    projectName: "route-project",
+    status: "Completed",
+    findings: [],
+    endpoints: [],
+    securityFindingsAvailable: false,
+  })).toString("latin1");
+
+  assert.ok(content.includes("Security findings were not assessed by this API Intelligence endpoint."));
+  assert.ok(content.includes("an empty findings list"));
+  assert.ok(content.includes("does not mean the project is secure."));
+});
+
 test("paginates long finding fields without wasting a page per line", () => {
   const pdf = Buffer.from(createReportPdf({
     id: "long-scan",

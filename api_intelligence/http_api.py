@@ -18,6 +18,7 @@ from email.parser import BytesParser
 from http import HTTPStatus
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
+from urllib.parse import urlsplit
 from wsgiref.simple_server import make_server
 from zipfile import BadZipFile, ZipFile
 
@@ -58,6 +59,23 @@ def _json_response(
         + (extra_headers or []),
     )
     return [encoded]
+
+
+def _is_local_frontend_origin(origin: str) -> bool:
+    try:
+        parsed = urlsplit(origin)
+        return (
+            parsed.scheme == "http"
+            and parsed.hostname in {"localhost", "127.0.0.1"}
+            and parsed.port is not None
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path == ""
+            and parsed.query == ""
+            and parsed.fragment == ""
+        )
+    except ValueError:
+        return False
 
 
 def _read_request_body(environ: dict[str, Any]) -> bytes:
@@ -420,17 +438,34 @@ def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[st
 
 def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
     """WSGI application implementing POST /api/v1/scan."""
+    origin = environ.get("HTTP_ORIGIN", "")
+    cors_headers = (
+        [
+            ("Access-Control-Allow-Origin", origin),
+            ("Access-Control-Allow-Methods", "POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type"),
+            ("Vary", "Origin"),
+        ]
+        if _is_local_frontend_origin(origin)
+        else []
+    )
+
+    def cors_start_response(status: str, headers: list[tuple[str, str]]) -> Any:
+        return start_response(status, headers + cors_headers)
+
     path = environ.get("PATH_INFO", "")
     method = environ.get("REQUEST_METHOD", "").upper()
     if path != ENDPOINT_PATH:
         return _json_response(
-            start_response,
+            cors_start_response,
             HTTPStatus.NOT_FOUND,
             {"error": {"kind": "not_found", "message": "Endpoint not found."}},
         )
+    if method == "OPTIONS":
+        return _json_response(cors_start_response, HTTPStatus.OK, {"status": "ok"})
     if method != "POST":
         return _json_response(
-            start_response,
+            cors_start_response,
             HTTPStatus.METHOD_NOT_ALLOWED,
             {"error": {"kind": "method_not_allowed", "message": "Use POST for this endpoint."}},
             [("Allow", "POST")],
@@ -446,14 +481,14 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
         response = _scan(source_zip, openapi_document)
     except RequestError as error:
         return _json_response(
-            start_response,
+            cors_start_response,
             error.status,
             {"error": {"kind": error.kind, "message": error.message}},
         )
     except Exception:
         LOGGER.exception("Unexpected API Intelligence scan failure")
         return _json_response(
-            start_response,
+            cors_start_response,
             HTTPStatus.INTERNAL_SERVER_ERROR,
             {
                 "error": {
@@ -462,7 +497,7 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
                 }
             },
         )
-    return _json_response(start_response, HTTPStatus.OK, response)
+    return _json_response(cors_start_response, HTTPStatus.OK, response)
 
 
 if __name__ == "__main__":

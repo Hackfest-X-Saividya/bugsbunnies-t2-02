@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, ArrowRight, Braces, CircleCheck, Download, Shi
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, PageHeader, StatCard } from "../components/Primitives.jsx";
+import { DemoNotice, LiveScanNotice, PageHeader, StatCard } from "../components/Primitives.jsx";
 import FindingsTable from "../components/FindingsTable.jsx";
 import { findingById } from "../data/mockData.js";
 import { countFindingsBySeverity, SEVERITY_ORDER } from "../services/findingRating.js";
@@ -37,7 +37,8 @@ export default function Dashboard() {
   const endpointCount = scan.endpoints.length;
   return <div className="page-content">
     <PageHeader eyebrow="OVERVIEW / SECURITY POSTURE" title="Security dashboard" description={`A connected view of findings and API routes for ${scan.projectName}.`} action={<Link to="/scan" className="button button-primary"><Braces size={16} /> New scan</Link>} />
-    <DemoNotice />
+    {scan.isDemo && <DemoNotice />}
+    <LiveScanNotice scan={scan} />
     <div className="stats-grid">
       <StatCard label="Total findings" value={scan.findings.length} note="Across all ratings" icon={ShieldAlert} />
       <StatCard label="Critical severity" value={severityCounts.Critical} note="Immediate review" icon={AlertTriangle} tone="red" />

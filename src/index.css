@@ -180,6 +180,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .doc-status > span { width: 6px; height: 6px; border-radius: 50%; }
 .doc-ok { color: #73d7a1; }.doc-ok > span { background: #22c55e; }
 .doc-missing { color: #f3bb62; }.doc-missing > span { background: #f59e0b; }
+.doc-unchecked { color: #9aa8bb; }.doc-unchecked > span { background: #64748b; }
 
 /* New scan */
 .scan-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(240px, .75fr); gap: 14px; align-items: start; }
@@ -351,6 +352,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .connection-pill > span { width: 5px; height: 5px; border-radius: 50%; }
 .connection-demo { color: #b6adff; background: #6358bd24; }.connection-demo > span { background: #9584ff; }
 .connection-live { color: #82d9a6; background: #22c55e19; }.connection-live > span { background: #22c55e; }
+.connection-error { color: #ffaaaa; background: #ef444419; }.connection-error > span { background: #ef4444; }
+.connection-error-message { color: #ffaaaa !important; }
 .settings-row { display: flex; align-items: flex-start; gap: 12px; padding: 17px 0; border-bottom: 1px solid #202f47; }
 .settings-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; color: #a8a4ff; background: #6660d81f; border-radius: 8px; }
 .settings-row > div:nth-child(2) { flex: 1; }
