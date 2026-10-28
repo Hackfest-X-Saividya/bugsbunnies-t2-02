@@ -78,7 +78,8 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(result["status"], "200 OK")
         self.assertEqual(result["body"]["status"], "completed")
         self.assertEqual(result["body"]["summary"]["routes_discovered"], 1)
-        self.assertFalse(result["body"]["summary"]["security_findings_available"])
+        self.assertTrue(result["body"]["summary"]["security_findings_available"])
+        self.assertEqual(result["body"]["summary"]["security_findings"], 0)
         self.assertEqual(result["body"]["routes"][0]["path"], "/items")
         self.assertEqual(result["body"]["routes"][0]["findings"], [])
         self.assertEqual(result["body"]["unmatched_findings"], [])
@@ -109,6 +110,22 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(result["status"], "200 OK")
         self.assertTrue(result["body"]["openapi_comparison"]["available"])
         self.assertEqual(result["body"]["openapi_comparison"]["undocumented_routes"], [])
+
+    def test_frontend_scan_compatibility_contract(self):
+        source_zip = self.zip_bytes({"app.py": "print('safe')\n"})
+        result = self.request(
+            [("file", "project.zip", source_zip, "application/zip")],
+            path="/api/scan",
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        scan_id = result["body"]["id"]
+        findings = self.request([], method="GET", path=f"/api/scans/{scan_id}/findings")
+        routes = self.request([], method="GET", path=f"/api/scans/{scan_id}/routes")
+        self.assertEqual(findings["status"], "200 OK")
+        self.assertEqual(findings["body"], [])
+        self.assertEqual(routes["status"], "200 OK")
+        self.assertIsInstance(routes["body"], list)
 
     def test_rejects_invalid_zip(self):
         result = self.request(

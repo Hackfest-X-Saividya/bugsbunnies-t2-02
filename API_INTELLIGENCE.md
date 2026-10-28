@@ -101,8 +101,10 @@ A successful response has this shape:
   "status": "completed",
   "summary": {
     "routes_discovered": 1,
-    "security_findings_available": false
+    "security_findings_available": true,
+    "security_findings": 0
   },
+  "findings": [],
   "routes": [
     {
       "method": "GET",
@@ -130,10 +132,18 @@ A successful response has this shape:
 The route entries use the internal API Intelligence field names documented
 above. `openapi_comparison` is `null` when no specification was uploaded;
 otherwise it contains the comparison result. `errors` and `limitations` come
-from static route analysis. The endpoint does not include security findings:
-this repository has no security scanner, so `security_findings_available` is
-`false` and route-level `findings` remain empty. Authentication signals are
+from static route analysis. The endpoint runs the optional Bandit scanner when its executable is installed.
+`security_findings_available` is `true` when the scanner completed successfully;
+scanner errors are included in the response `errors` collection. Findings are
+returned in `findings` and defensibly associated with routes when source file
+and handler evidence supports the match. Authentication signals are
 heuristics and do not establish whether an endpoint is actually protected.
+
+For the browser workspace, the same backend also exposes `POST /api/scan` with
+the frontend's `file` multipart field, and `GET /api/scans/{id}/findings` and
+`GET /api/scans/{id}/routes`. These are an in-memory development compatibility
+layer around the synchronous scan; production deployment should replace the
+store with durable scan persistence.
 
 Request errors use `{"error": {"kind": "...", "message": "..."}}`. The endpoint
 returns `400` for malformed requests, `411` when `Content-Length` is missing

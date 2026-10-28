@@ -4,14 +4,30 @@ Frontend for the BugsBunnies team project at HackFest 2026. ShadowGuard AI conne
 
 ## Run locally
 
-```bash
+Install and start the backend and frontend in separate PowerShell terminals:
+
+```powershell
+python -m pip install -e ".[scanner,test]"
+python -m api_intelligence.http_api
+```
+
+In a second terminal:
+
+```powershell
 npm install
 npm run dev
 ```
 
+The backend listens on `http://127.0.0.1:8000` and the Vite frontend listens
+on `http://localhost:5173`.
+
 The app starts in **demo mode** when `VITE_API_BASE_URL` is not set. The built-in insecure and secure FastAPI samples load clearly labeled demonstration data. Uploaded archives are not sent anywhere in demo mode.
 
-To enable backend integration, copy `.env.example` to `.env`, set `VITE_API_BASE_URL` to your FastAPI service, and restart Vite. Live scan requests use the centralized service in `src/services/api.js`; failed backend requests are shown as errors rather than replaced with mock results.
+To enable backend integration, copy `.env.example` to `.env`, set
+`VITE_API_BASE_URL=http://127.0.0.1:8000`, and restart Vite. The local backend
+is a standard-library WSGI service, not FastAPI. Live scan requests use the
+centralized service in `src/services/api.js`; failed backend requests are
+shown as errors rather than replaced with mock results.
 
 ## Frontend features
 

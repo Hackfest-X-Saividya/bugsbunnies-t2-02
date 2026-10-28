@@ -21,9 +21,13 @@ from wsgiref.simple_server import make_server
 from zipfile import BadZipFile, ZipFile
 
 from .route_discovery import analyze_project
+from zeroshadow_security.adapter import to_security_errors, to_security_findings
+from zeroshadow_security.scanner import run_bandit
 
 LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
+FRONTEND_SCAN_PATH = "/api/scan"
+FRONTEND_SCANS_PREFIX = "/api/scans/"
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_OPENAPI_BYTES = 2 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 100 * 1024 * 1024
@@ -31,6 +35,8 @@ MAX_ARCHIVE_ENTRIES = 5000
 MAX_MULTIPART_BOUNDARY_BYTES = 70
 BOUNDARY_PATTERN = re.compile(r"[0-9A-Za-z'()+_,./:=?-]+\Z")
 CHUNK_SIZE = 64 * 1024
+_SCAN_RESULTS: dict[str, dict[str, Any]] = {}
+_NEXT_SCAN_ID = 1
 
 
 class RequestError(Exception):
@@ -53,6 +59,9 @@ def _json_response(
         [
             ("Content-Type", "application/json; charset=utf-8"),
             ("Content-Length", str(len(encoded))),
+            ("Access-Control-Allow-Origin", "http://localhost:5173"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type"),
         ]
         + (extra_headers or []),
     )
@@ -152,12 +161,14 @@ def _parse_multipart(
     for part in message.iter_parts():
         field_name = part.get_param("name", header="content-disposition")
         filename = part.get_filename()
-        if field_name not in {"source_zip", "openapi_json"} or filename is None:
+        if field_name not in {"source_zip", "file", "openapi_json"} or filename is None:
             raise RequestError(
                 HTTPStatus.BAD_REQUEST,
                 "invalid_form_field",
                 "Only source_zip and optional openapi_json file fields are supported.",
             )
+        if field_name == "file":
+            field_name = "source_zip"
         if field_name in fields:
             raise RequestError(
                 HTTPStatus.BAD_REQUEST,
@@ -356,27 +367,109 @@ def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[st
     with tempfile.TemporaryDirectory(prefix="api-intelligence-") as directory:
         root = Path(directory)
         _extract_archive(source_zip, root)
-        analysis = analyze_project(root, openapi_spec=openapi_document)
+        security_result = run_bandit(root)
+        security_findings = to_security_findings(security_result)
+        for finding in security_findings:
+            file_path = finding.get("file_path")
+            if isinstance(file_path, str):
+                try:
+                    relative_path = Path(file_path).resolve().relative_to(root.resolve())
+                except ValueError:
+                    continue
+                finding["file_path"] = relative_path.as_posix()
+        analysis = analyze_project(root, findings=security_findings, openapi_spec=openapi_document)
 
     return {
         "status": "completed",
         "summary": {
             "routes_discovered": len(analysis["routes"]),
-            "security_findings_available": False,
+            "security_findings_available": security_result.succeeded,
+            "security_findings": len(security_findings),
         },
         "routes": analysis["routes"],
+        "findings": security_findings,
         "unmatched_findings": analysis["unmatched_findings"],
         "openapi_comparison": analysis["openapi_comparison"],
-        "errors": analysis["errors"],
+        "errors": analysis["errors"] + to_security_errors(security_result),
         "limitations": analysis["limitations"],
     }
 
 
+def _frontend_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for index, finding in enumerate(result.get("findings", []), start=1):
+        findings.append(
+            {
+                **finding,
+                "id": f"finding-{index}",
+                "filePath": finding.get("file_path", ""),
+                "status": "Open",
+                "mitigation": finding.get("remediation"),
+                "source": "Bandit",
+            }
+        )
+    return findings
+
+
+def _frontend_routes(result: dict[str, Any], findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    findings_by_rule = {finding["rule_id"]: finding["id"] for finding in findings}
+    routes: list[dict[str, Any]] = []
+    for index, route in enumerate(result.get("routes", []), start=1):
+        related = [
+            association.get("finding", {})
+            for association in route.get("findings", [])
+            if isinstance(association, dict)
+        ]
+        related_ids = [
+            findings_by_rule[finding["rule_id"]]
+            for finding in related
+            if finding.get("rule_id") in findings_by_rule
+        ]
+        routes.append(
+            {
+                **route,
+                "id": f"route-{index}",
+                "filePath": route.get("file", ""),
+                "documented": bool(route.get("documented", False)),
+                "findings": related_ids,
+            }
+        )
+    return routes
+
+
+def _store_frontend_scan(result: dict[str, Any]) -> dict[str, Any]:
+    global _NEXT_SCAN_ID
+    scan_id = f"scan-{_NEXT_SCAN_ID}"
+    _NEXT_SCAN_ID += 1
+    findings = _frontend_findings(result)
+    routes = _frontend_routes(result, findings)
+    stored = {**result, "id": scan_id, "findings": findings, "routes": routes}
+    _SCAN_RESULTS[scan_id] = stored
+    return {"id": scan_id, "scan_id": scan_id, "status": result["status"]}
+
+
 def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
-    """WSGI application implementing POST /api/v1/scan."""
+    """WSGI application for the API Intelligence and frontend scan contracts."""
     path = environ.get("PATH_INFO", "")
     method = environ.get("REQUEST_METHOD", "").upper()
-    if path != ENDPOINT_PATH:
+    if method == "OPTIONS" and (path == ENDPOINT_PATH or path == FRONTEND_SCAN_PATH or path.startswith(FRONTEND_SCANS_PREFIX)):
+        return _json_response(start_response, HTTPStatus.NO_CONTENT, {})
+    frontend_scan = path == FRONTEND_SCAN_PATH
+    frontend_resource = path.startswith(FRONTEND_SCANS_PREFIX)
+    if frontend_resource and method == "GET":
+        remainder = path[len(FRONTEND_SCANS_PREFIX):]
+        scan_id, _, resource = remainder.partition("/")
+        result = _SCAN_RESULTS.get(scan_id)
+        if result is None:
+            return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan not found."}})
+        if resource == "findings":
+            return _json_response(start_response, HTTPStatus.OK, result["findings"])
+        if resource == "routes":
+            return _json_response(start_response, HTTPStatus.OK, result["routes"])
+        if not resource:
+            return _json_response(start_response, HTTPStatus.OK, result)
+        return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan resource not found."}})
+    if path not in {ENDPOINT_PATH, FRONTEND_SCAN_PATH}:
         return _json_response(
             start_response,
             HTTPStatus.NOT_FOUND,
@@ -398,6 +491,8 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
         )
         openapi_document = _validate_openapi(openapi_bytes)
         response = _scan(source_zip, openapi_document)
+        if frontend_scan:
+            response = _store_frontend_scan(response)
     except RequestError as error:
         return _json_response(
             start_response,
