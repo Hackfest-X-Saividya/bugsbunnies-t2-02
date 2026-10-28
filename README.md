@@ -64,6 +64,39 @@ scan can contain findings. Missing executables, invalid paths, timeouts,
 malformed JSON, and other scanner execution errors are represented separately
 as `failed` with typed internal errors.
 
+The verified serialized result shape from a real temporary fixture is:
+
+```json
+{
+  "status": "succeeded",
+  "findings": [
+    {
+      "rule_id": "B105",
+      "description": "Possible hardcoded password: 'secret'",
+      "severity": "LOW",
+      "path": "insecure.py",
+      "line": 1,
+      "test_id": "B105",
+      "evidence": "1 password = 'secret'\n",
+      "owasp_category": "A07:2021 Identification and Authentication Failures",
+      "remediation": "Do not hard-code passwords; load secrets from a protected secret store or environment.",
+      "references": [
+        "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html"
+      ]
+    }
+  ],
+  "errors": [],
+  "exit_code": 1,
+  "duration_ms": 299,
+  "files_scanned": 2
+}
+```
+
+The temporary fixture's absolute path and scan duration vary by machine.
+Optional finding fields are serialized as `null` when unavailable, while
+`references` is always an array. This is the internal result format, not yet
+the application's final public Vulnerability / Scanning API contract.
+
 ## Test
 
 ```powershell

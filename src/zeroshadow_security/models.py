@@ -50,25 +50,25 @@ class ScanResult:
             "status": self.status.value,
             "findings": [
                 {
-                    key: value
-                    for key, value in {
-                        "rule_id": finding.rule_id,
-                        "description": finding.description,
-                        "severity": finding.severity,
-                        "path": finding.path,
-                        "line": finding.line,
-                        "test_id": finding.test_id,
-                        "evidence": finding.evidence,
-                        "owasp_category": finding.owasp_category,
-                        "remediation": finding.remediation,
-                        "references": list(finding.references),
-                    }.items()
-                    if value is not None
+                    "rule_id": finding.rule_id,
+                    "description": finding.description,
+                    "severity": finding.severity,
+                    "path": finding.path,
+                    "line": finding.line,
+                    "test_id": finding.test_id,
+                    "evidence": finding.evidence,
+                    "owasp_category": finding.owasp_category,
+                    "remediation": finding.remediation,
+                    "references": list(finding.references),
                 }
                 for finding in self.findings
             ],
             "errors": [
-                {key: value for key, value in {"message": error.message, "kind": error.kind, "details": error.details}.items() if value is not None}
+                {
+                    "message": error.message,
+                    "kind": error.kind,
+                    "details": error.details,
+                }
                 for error in self.errors
             ],
             "exit_code": self.exit_code,

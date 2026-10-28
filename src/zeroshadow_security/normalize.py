@@ -21,7 +21,6 @@ def normalize_bandit_results(payload: Mapping[str, Any]) -> list[Finding]:
         if not isinstance(rule_id, str) or not isinstance(path, str):
             continue
         severity = raw.get("issue_severity", "UNDEFINED")
-        confidence = raw.get("issue_confidence")
         findings.append(
             Finding(
                 rule_id=rule_id,
