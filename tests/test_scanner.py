@@ -1,0 +1,49 @@
+import json
+import subprocess
+
+from zeroshadow_security.models import ScanStatus
+from zeroshadow_security.scanner import run_bandit
+
+
+def test_empty_project_is_success(tmp_path):
+    result = run_bandit(tmp_path)
+    assert result.status is ScanStatus.SUCCEEDED
+    assert result.files_scanned == 0
+
+
+def test_missing_path_is_failure(tmp_path):
+    result = run_bandit(tmp_path / "missing")
+    assert result.status is ScanStatus.FAILED
+    assert result.errors[0].kind == "invalid_path"
+
+
+def test_missing_executable_is_failure(tmp_path):
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    result = run_bandit(tmp_path, executable="not-a-real-bandit")
+    assert result.status is ScanStatus.FAILED
+    assert result.errors[0].kind == "missing_executable"
+
+
+def test_findings_do_not_make_a_scan_failure(tmp_path, monkeypatch):
+    (tmp_path / "app.py").write_text("password = 'secret'\n", encoding="utf-8")
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            1,
+            json.dumps({"results": [{"test_id": "B105", "filename": "app.py", "issue_severity": "LOW"}]}),
+            "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = run_bandit(tmp_path)
+    assert result.status is ScanStatus.SUCCEEDED
+    assert len(result.findings) == 1
+
+
+def test_malformed_output_is_failure(tmp_path, monkeypatch):
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "{", ""))
+    result = run_bandit(tmp_path)
+    assert result.status is ScanStatus.FAILED
+    assert result.errors[0].kind == "malformed_output"
