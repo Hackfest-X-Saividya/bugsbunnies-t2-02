@@ -28,6 +28,9 @@ vector, including supported threat and environmental metrics, and the UI derives
 severity from the calculated score: Critical (9.0–10.0), High (7.0–8.9),
 Medium (4.0–6.9), Low (0.1–3.9), or None (0.0). The current Bandit integration
 does not provide CVSS metrics, so its findings retain Bandit's severity labels
-and show CVSS scores as unavailable.
+and show estimated severity values instead. Estimates are fixed representative
+values by label (Critical 9.5, High 8.0, Medium 5.5, Low 2.5, None 0.0); they
+are explicitly labeled as estimates and are not CVSS scores. Informational and
+unrated findings show "Not rated".
 
 All included scan results and source excerpts are fictional demonstration data. The browser does not execute uploaded source code.

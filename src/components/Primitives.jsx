@@ -1,5 +1,5 @@
 import { ArrowUpRight, CircleHelp, Info } from "lucide-react";
-import { resolveFindingRating } from "../services/findingRating.js";
+import { getFindingRatingPresentation } from "../services/findingRating.js";
 
 export function PageHeader({ eyebrow, title, description, action }) {
   return (
@@ -25,14 +25,16 @@ export function SeverityBadge({ severity }) {
 }
 
 export function FindingRating({ finding, compact = false }) {
-  const rating = resolveFindingRating(finding);
+  const { rating, scoreLabel, scoreDescription } = getFindingRatingPresentation(finding);
   return (
     <span className={`finding-rating${compact ? " finding-rating-compact" : ""}`}>
       <SeverityBadge severity={rating.severity} />
-      {rating.cvssScore !== null
-        ? <span className="cvss-score" title="CVSS 4.0 score calculated from the validated vector by the backend.">CVSS 4.0 calculated · {rating.cvssScore.toFixed(1)}</span>
-        : <span className="cvss-unavailable" title={rating.scoreNote} aria-label={rating.scoreNote}>
-          {rating.severity === "Informational" ? "CVSS 4.0 not applicable" : "CVSS 4.0 unavailable"}
+      {rating.numericScore !== null
+        ? <span className={`rating-score${rating.scoreSource === "Estimated" ? " rating-score-estimated" : ""}`} title={scoreDescription}>
+          {scoreLabel}
+        </span>
+        : <span className="cvss-unavailable" title={scoreDescription} aria-label={scoreDescription}>
+          {scoreLabel}
         </span>}
     </span>
   );
