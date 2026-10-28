@@ -43,7 +43,8 @@ before `.env` was created; restart both processes.
 
 - Responsive landing page and workspace navigation
 - Security dashboard with vulnerability and endpoint documentation charts
-- ZIP upload validation (50 MB maximum) and sample project demos
+- ZIP upload validation (20 MiB request maximum) and sample project demos
+- Source-file and multi-file upload support for the documented language extensions
 - Searchable API explorer and endpoint risk inspection with finding excerpts
 - Scan history and workspace integration settings
 - Printable report and downloadable CSV export
@@ -86,6 +87,25 @@ tests only. Production deployment must replace them with authenticated
 identity/role resolution, durable database storage, restricted quarantine
 storage and lifecycle cleanup, and a durable notification provider. Approval
 sets `execution_allowed` to `False` and authorizes static analysis only.
+
+## Source formats and analyzers
+
+The API accepts `.zip` archives, individual source files, and repeated
+multi-file inputs. Supported extensions are Python, JavaScript/TypeScript,
+Java, Go, PHP, Ruby, C/C++, C#, Rust, Swift, Kotlin, Scala, and shell source
+files. Python is analyzed with Bandit. Non-Python files are routed through an
+optional Semgrep adapter; without Semgrep, those files return an explicit
+analyzer-unavailable/partial result and are never reported as clean.
+
+Install the optional analyzer separately when required:
+
+```powershell
+python -m pip install semgrep
+```
+
+The scanner does not execute, import, build, or run uploaded source. It rejects
+binary source files, invalid UTF-8, unsafe archive entries, empty uploads, and
+unsupported extensions.
 
 ## Limitations and roadmap
 

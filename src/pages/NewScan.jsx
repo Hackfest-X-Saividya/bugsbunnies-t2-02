@@ -6,7 +6,8 @@ import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
 import { isDemoMode, getScanFindings, getScanRoutes, submitScan } from "../services/api.js";
 import { endpoints, findings } from "../data/mockData.js";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const ACCEPTED_SOURCE_EXTENSIONS = [".zip", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".php", ".rb", ".cs", ".c", ".h", ".cpp", ".hpp", ".rs", ".swift", ".kt", ".kts", ".scala", ".sh"];
 const secureEndpoints = endpoints.filter((endpoint) => endpoint.documented).map((endpoint) => ({
   ...endpoint,
   findings: [],
@@ -54,14 +55,15 @@ export default function NewScan() {
     setError("");
     setStatus("");
     if (!candidate) return;
-    if (!candidate.name.toLowerCase().endsWith(".zip")) {
+    const extension = candidate.name.slice(candidate.name.lastIndexOf(".")).toLowerCase();
+    if (!ACCEPTED_SOURCE_EXTENSIONS.includes(extension)) {
       setFile(null);
-      setError("Choose a ZIP archive containing your Python or FastAPI project.");
+      setError(`Choose a supported source file or ZIP archive (${ACCEPTED_SOURCE_EXTENSIONS.join(", ")}).`);
       return;
     }
     if (candidate.size > MAX_FILE_SIZE) {
       setFile(null);
-      setError("This file exceeds the 50 MB limit. Choose a smaller ZIP archive.");
+      setError("This file exceeds the 20 MB limit. Choose a smaller source file or archive.");
       return;
     }
     setFile(candidate);
@@ -75,7 +77,7 @@ export default function NewScan() {
     }
     setLoading(true);
     setError("");
-    setStatus("Uploading archive securely to your configured backend…");
+    setStatus("Uploading source securely to your configured backend…");
     try {
       const created = await submitScan(file);
       const scanId = created?.id ?? created?.scan_id;
@@ -87,7 +89,7 @@ export default function NewScan() {
       }
       setScan({
         id: scanId,
-        projectName: file.name.replace(/\.zip$/i, ""),
+        projectName: file.name.replace(/\.[^.]+$/i, ""),
         status: "Complete",
         findings: realFindings,
         endpoints: realEndpoints,
@@ -115,18 +117,18 @@ export default function NewScan() {
   };
 
   return <div className="page-content">
-    <PageHeader eyebrow="WORKSPACE / NEW ANALYSIS" title="Upload your project" description="Analyze a Python project and connect code-level signals to your API surface." />
+    <PageHeader eyebrow="WORKSPACE / NEW ANALYSIS" title="Upload your source" description="Analyze supported source files and connect Python API signals to your API surface." />
     {isDemoMode && <DemoNotice>Demo mode · No backend is configured. Sample projects use illustrative results; uploaded files are not sent anywhere.</DemoNotice>}
     <div className="scan-layout">
       <section className="panel upload-panel">
-        <div className="section-title-row"><div><h2>Project archive</h2><p>Choose a ZIP archive containing Python or FastAPI source code.</p></div><span className="step-count">STEP 01 <ArrowRight size={13} /> 02</span></div>
+        <div className="section-title-row"><div><h2>Source input</h2><p>Choose a supported source file or ZIP archive.</p></div><span className="step-count">STEP 01 <ArrowRight size={13} /> 02</span></div>
         <div className={`drop-zone ${dragging ? "drop-active" : ""} ${file ? "drop-has-file" : ""}`}
           onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files?.[0]); }}>
-          <input ref={fileInput} className="sr-only" type="file" accept=".zip,application/zip" aria-label="Choose a ZIP project archive" onChange={(event) => acceptFile(event.target.files?.[0])} />
+          <input ref={fileInput} className="sr-only" type="file" accept={ACCEPTED_SOURCE_EXTENSIONS.join(",")} aria-label="Choose a source file or ZIP archive" onChange={(event) => acceptFile(event.target.files?.[0])} />
           {file ? <><div className="drop-icon selected-file"><FileArchive size={23} /></div><strong>{file.name}</strong><span>{(file.size / (1024 * 1024)).toFixed(2)} MB · Ready to scan</span><button className="text-button" onClick={() => { setFile(null); fileInput.current.value = ""; }}>Remove file</button></>
-            : <><div className="drop-icon"><FolderUp size={23} /></div><strong>Drop your project archive here</strong><span>ZIP files only · Maximum size 50 MB</span><button className="button button-outline" onClick={() => fileInput.current?.click()}>Browse files</button></>}
+            : <><div className="drop-icon"><FolderUp size={23} /></div><strong>Drop source file or archive here</strong><span>Supported source formats · Maximum size 20 MB</span><button className="button button-outline" onClick={() => fileInput.current?.click()}>Browse files</button></>}
         </div>
         {error && <div className="form-message form-error" role="alert"><AlertCircle size={16} />{error}</div>}
         {status && <div className="form-message form-progress" role="status"><LoaderCircle className="spin" size={16} />{status}</div>}

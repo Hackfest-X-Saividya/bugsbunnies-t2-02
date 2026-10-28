@@ -3,6 +3,8 @@
 `api_intelligence` statically discovers common FastAPI route decorators in a
 Python project, adds conservative authentication review signals, correlates
 normalized scanner findings, and can compare discovered routes with OpenAPI.
+The security scanner accepts a ZIP archive, one source file, or repeated
+`files` multipart fields for a multi-file project.
 It parses source with Python's AST; it never imports or executes target code.
 
 ## Use
@@ -86,13 +88,20 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/scan `
   -F "openapi_json=@openapi.json;type=application/json"
 ```
 
-`source_zip` must have a `.zip` filename; `openapi_json`, when provided, must
-have a `.json` filename and contain UTF-8 JSON with a `paths` object. The
-request is limited to 20 MiB, OpenAPI input to 2 MiB, extraction to 100 MiB,
-and 5,000 ZIP entries. ZIP paths must be relative and may not contain parent
-traversal; symbolic links and special files are rejected. Uploaded code is
-never executed, and the temporary extraction directory is removed after
-analysis.
+`source_zip` must have a `.zip` filename. For compatibility, the frontend's
+`file` field accepts either a ZIP archive or one source file. New clients may
+send one `source_file` or repeated `files` fields. Accepted source extensions
+are `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.go`, `.php`, `.rb`, `.cs`,
+`.c`, `.h`, `.cpp`, `.hpp`, `.rs`, `.swift`, `.kt`, `.kts`, `.scala`, and
+`.sh`. Unsupported extensions, empty files, binary source files, unsafe paths,
+and invalid UTF-8 are rejected with structured errors.
+
+The request is limited to 20 MiB, each source file to 5 MiB, source files to
+50 inputs, OpenAPI input to 2 MiB, extraction to 100 MiB, and 5,000 ZIP
+entries. ZIP paths must be relative and may not contain parent traversal;
+symbolic links and special files are rejected. Uploaded code is never
+executed, imported, built, or run, and the temporary extraction directory is
+removed after analysis.
 
 A successful response has this shape:
 
@@ -132,11 +141,14 @@ A successful response has this shape:
 The route entries use the internal API Intelligence field names documented
 above. `openapi_comparison` is `null` when no specification was uploaded;
 otherwise it contains the comparison result. `errors` and `limitations` come
-from static route analysis. The endpoint runs the optional Bandit scanner when its executable is installed.
-`security_findings_available` is `true` when the scanner completed successfully;
-scanner errors are included in the response `errors` collection. Findings are
-returned in `findings` and defensibly associated with routes when source file
-and handler evidence supports the match. Authentication signals are
+from static route analysis. The endpoint runs Bandit for Python files. Non-Python files are routed to the
+optional Semgrep adapter. Semgrep is not bundled and must be installed and
+available on `PATH` (or supplied through the analyzer API); when it is absent,
+the response is `partial`/unavailable rather than a false clean result.
+`security_findings_available` is `true` only when all requested analysis stages
+completed successfully; analyzer errors are included in the `errors`
+collection. Findings are returned in `findings` and defensibly associated with
+routes when source file and handler evidence supports the match. Authentication signals are
 heuristics and do not establish whether an endpoint is actually protected.
 
 For the browser workspace, the same backend also exposes `POST /api/scan` with

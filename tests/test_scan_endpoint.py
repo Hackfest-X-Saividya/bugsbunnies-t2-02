@@ -127,6 +127,60 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(routes["status"], "200 OK")
         self.assertIsInstance(routes["body"], list)
 
+    def test_accepts_individual_python_source_file(self):
+        result = self.request(
+            [("source_file", "app.py", b"password = 'example-only'\n", "text/x-python")],
+            path=ENDPOINT_PATH,
+        )
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(result["body"]["summary"]["security_findings"], 1)
+        self.assertEqual(result["body"]["findings"][0]["file_path"], "app.py")
+
+    def test_accepts_multiple_source_files_and_reports_optional_analyzer_gap(self):
+        result = self.request(
+            [
+                ("files", "app.py", b"print('safe')\n", "text/x-python"),
+                ("files", "app.js", b"const value = input;\n", "text/javascript"),
+            ],
+            path=ENDPOINT_PATH,
+        )
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(result["body"]["summary"]["analysis_status"], "partial")
+        self.assertTrue(any(error["code"] == "analyzer_unavailable" for error in result["body"]["errors"]))
+        self.assertFalse(result["body"]["summary"]["security_findings_available"])
+
+    def test_rejects_unsupported_empty_and_binary_source_files(self):
+        unsupported = self.request(
+            [("source_file", "notes.md", b"# not source", "text/markdown")],
+            path=ENDPOINT_PATH,
+        )
+        empty = self.request(
+            [("source_file", "app.py", b"", "text/x-python")],
+            path=ENDPOINT_PATH,
+        )
+        binary = self.request(
+            [("source_file", "app.py", b"print(\x00)", "text/x-python")],
+            path=ENDPOINT_PATH,
+        )
+        self.assertEqual(unsupported["body"]["error"]["kind"], "unsupported_file_type")
+        self.assertEqual(empty["body"]["error"]["kind"], "empty_source_file")
+        self.assertEqual(binary["body"]["error"]["kind"], "binary_source_file")
+
+    def test_rejects_unsafe_and_duplicate_source_paths(self):
+        unsafe = self.request(
+            [("source_file", "../app.py", b"print('unsafe')\n", "text/x-python")],
+            path=ENDPOINT_PATH,
+        )
+        duplicate = self.request(
+            [
+                ("files", "app.py", b"print('one')\n", "text/x-python"),
+                ("files", "app.py", b"print('two')\n", "text/x-python"),
+            ],
+            path=ENDPOINT_PATH,
+        )
+        self.assertEqual(unsafe["body"]["error"]["kind"], "unsafe_source_path")
+        self.assertEqual(duplicate["body"]["error"]["kind"], "duplicate_source_path")
+
     def test_health_endpoint_and_local_cors_origins(self):
         result = self.request([], method="GET", path="/health")
         self.assertEqual(result["status"], "200 OK")

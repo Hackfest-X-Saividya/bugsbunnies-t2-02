@@ -11,6 +11,7 @@ import re
 import stat
 import tempfile
 import zlib
+from dataclasses import dataclass
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
@@ -21,8 +22,8 @@ from wsgiref.simple_server import make_server
 from zipfile import BadZipFile, ZipFile
 
 from .route_discovery import analyze_project
+from zeroshadow_security.analyzers import accepted_extensions, language_for_path, scan_project
 from zeroshadow_security.adapter import to_security_errors, to_security_findings
-from zeroshadow_security.scanner import run_bandit
 
 LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
@@ -39,6 +40,22 @@ CHUNK_SIZE = 64 * 1024
 _SCAN_RESULTS: dict[str, dict[str, Any]] = {}
 _NEXT_SCAN_ID = 1
 MAX_STORED_SCANS = 100
+MAX_SOURCE_FILES = 50
+MAX_SOURCE_FILE_BYTES = 5 * 1024 * 1024
+ACCEPTED_EXTENSIONS = set(accepted_extensions())
+
+
+@dataclass(frozen=True)
+class UploadedSource:
+    filename: str
+    content: bytes
+
+
+@dataclass(frozen=True)
+class UploadBundle:
+    source_zip: bytes | None
+    source_files: tuple[UploadedSource, ...]
+    openapi_json: bytes | None
 
 
 class RequestError(Exception):
@@ -111,10 +128,7 @@ def _read_request_body(environ: dict[str, Any]) -> bytes:
     return body
 
 
-def _parse_multipart(
-    content_type: str,
-    body: bytes,
-) -> tuple[bytes, bytes | None]:
+def _parse_multipart(content_type: str, body: bytes) -> UploadBundle:
     content_headers = Message()
     content_headers["Content-Type"] = content_type
     boundary = content_headers.get_param("boundary", header="content-type")
@@ -159,24 +173,18 @@ def _parse_multipart(
             "The multipart form data could not be parsed.",
         )
 
-    fields: dict[str, bytes] = {}
-    filenames: dict[str, str] = {}
+    source_zip: UploadedSource | None = None
+    source_files: list[UploadedSource] = []
+    openapi_json: bytes | None = None
+    openapi_filename: str | None = None
     for part in message.iter_parts():
         field_name = part.get_param("name", header="content-disposition")
         filename = part.get_filename()
-        if field_name not in {"source_zip", "file", "openapi_json"} or filename is None:
+        if field_name not in {"source_zip", "file", "source_file", "files", "openapi_json"} or filename is None:
             raise RequestError(
                 HTTPStatus.BAD_REQUEST,
                 "invalid_form_field",
-                "Only source_zip and optional openapi_json file fields are supported.",
-            )
-        if field_name == "file":
-            field_name = "source_zip"
-        if field_name in fields:
-            raise RequestError(
-                HTTPStatus.BAD_REQUEST,
-                "duplicate_form_field",
-                f"The {field_name} field may be supplied only once.",
+                "Use source_zip, file, source_file, files, or optional openapi_json fields.",
             )
         payload = part.get_payload(decode=True)
         if not isinstance(payload, bytes):
@@ -185,24 +193,47 @@ def _parse_multipart(
                 "invalid_form_field",
                 f"The {field_name} upload is invalid.",
             )
-        fields[field_name] = payload
-        filenames[field_name] = filename
+        if field_name == "openapi_json":
+            if openapi_json is not None:
+                raise RequestError(HTTPStatus.BAD_REQUEST, "duplicate_form_field", "The openapi_json field may be supplied only once.")
+            openapi_json = payload
+            openapi_filename = filename
+            continue
+        if not payload:
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "empty_source_file", "Uploaded source files must not be empty.")
+        is_archive = field_name == "source_zip" or (field_name == "file" and Path(filename).suffix.lower() == ".zip")
+        if len(payload) > (MAX_REQUEST_BYTES if is_archive else MAX_SOURCE_FILE_BYTES):
+            raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "source_file_too_large", "A source file exceeds the configured size limit.")
+        if not is_archive and b"\x00" in payload:
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "Binary files are not accepted as source code.")
+        source = UploadedSource(filename, payload)
+        if field_name == "source_zip" or (field_name == "file" and Path(filename).suffix.lower() == ".zip"):
+            if source_zip is not None:
+                raise RequestError(HTTPStatus.BAD_REQUEST, "duplicate_form_field", "The source_zip field may be supplied only once.")
+            source_zip = source
+        else:
+            source_files.append(source)
 
-    source_zip = fields.get("source_zip")
-    if source_zip is None:
+    if source_zip is not None and source_files:
+        raise RequestError(HTTPStatus.BAD_REQUEST, "conflicting_source_inputs", "Provide a ZIP archive or source files, not both.")
+    if source_zip is None and not source_files:
         raise RequestError(
             HTTPStatus.BAD_REQUEST,
-            "source_zip_required",
-            "A source_zip file upload is required.",
+            "source_input_required",
+            "Provide a source_zip archive, file source, or files source inputs.",
         )
-    if Path(filenames["source_zip"]).suffix.lower() != ".zip":
+    if source_zip is not None and Path(source_zip.filename).suffix.lower() != ".zip":
         raise RequestError(
             HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
             "unsupported_file_type",
-            "The source_zip upload must be a .zip file.",
+            "The source_zip upload must have a .zip extension.",
         )
-
-    openapi_json = fields.get("openapi_json")
+    if len(source_files) > MAX_SOURCE_FILES:
+        raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "too_many_source_files", "Too many source files were uploaded.")
+    for source in source_files:
+        if Path(source.filename).suffix.lower() not in ACCEPTED_EXTENSIONS or language_for_path(source.filename) is None:
+            accepted = ", ".join(sorted(ACCEPTED_EXTENSIONS))
+            raise RequestError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_file_type", f"Unsupported source extension. Accepted extensions: {accepted}.")
     if openapi_json is not None:
         if len(openapi_json) > MAX_OPENAPI_BYTES:
             raise RequestError(
@@ -210,13 +241,17 @@ def _parse_multipart(
                 "openapi_too_large",
                 "The OpenAPI JSON upload exceeds the maximum size.",
             )
-        if Path(filenames["openapi_json"]).suffix.lower() != ".json":
+        if not openapi_filename or Path(openapi_filename).suffix.lower() != ".json":
             raise RequestError(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 "unsupported_file_type",
                 "The openapi_json upload must be a .json file.",
             )
-    return source_zip, openapi_json
+    return UploadBundle(
+        source_zip=source_zip.content if source_zip is not None else None,
+        source_files=tuple(source_files),
+        openapi_json=openapi_json,
+    )
 
 
 def _validate_openapi(openapi_bytes: bytes | None) -> dict[str, Any] | None:
@@ -366,11 +401,69 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
         ) from None
 
 
-def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[str, Any]:
+def _safe_source_path(root: Path, filename: str) -> Path:
+    normalized = filename.replace("\\", "/")
+    if not normalized or "\x00" in normalized or normalized.startswith("/") or ntpath.splitdrive(normalized)[0]:
+        raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "unsafe_source_path", "A source file path is invalid.")
+    parts = PurePosixPath(normalized).parts
+    if any(part in {"", ".", ".."} for part in parts):
+        raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "unsafe_source_path", "A source file path must stay inside the upload.")
+    destination = root.joinpath(*parts)
+    try:
+        destination.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "unsafe_source_path", "A source file path is outside the upload.") from None
+    return destination
+
+
+def _write_source_files(root: Path, sources: tuple[UploadedSource, ...]) -> None:
+    total = 0
+    seen_paths: set[str] = set()
+    for source in sources:
+        destination = _safe_source_path(root, source.filename)
+        normalized_key = destination.relative_to(root).as_posix().casefold()
+        if normalized_key in seen_paths:
+            raise RequestError(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                "duplicate_source_path",
+                "The source upload contains duplicate file paths.",
+            )
+        seen_paths.add(normalized_key)
+        if destination.suffix.lower() not in ACCEPTED_EXTENSIONS:
+            raise RequestError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_file_type", "The uploaded file is not a supported source-code format.")
+        try:
+            source.content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "invalid_source_encoding", "Source files must be valid UTF-8 text.") from None
+        total += len(source.content)
+        if total > MAX_EXTRACTED_BYTES:
+            raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "source_files_too_large", "Source files exceed the configured total size limit.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.content)
+
+
+def _validate_source_tree(root: Path) -> None:
+    for path in root.rglob("*"):
+        if not path.is_file() or language_for_path(path) is None:
+            continue
+        try:
+            content = path.read_bytes()
+            content.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "A supported source file is not valid UTF-8 text.") from None
+        if b"\x00" in content:
+            raise RequestError(HTTPStatus.UNPROCESSABLE_ENTITY, "binary_source_file", "Binary files are not accepted as source code.")
+
+
+def _scan_bundle(bundle: UploadBundle, openapi_document: dict[str, Any] | None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="api-intelligence-") as directory:
         root = Path(directory)
-        _extract_archive(source_zip, root)
-        security_result = run_bandit(root)
+        if bundle.source_zip is not None:
+            _extract_archive(bundle.source_zip, root)
+        else:
+            _write_source_files(root, bundle.source_files)
+        _validate_source_tree(root)
+        security_result = scan_project(root)
         security_findings = to_security_findings(security_result)
         for finding in security_findings:
             file_path = finding.get("file_path")
@@ -386,8 +479,10 @@ def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[st
         "status": "completed",
         "summary": {
             "routes_discovered": len(analysis["routes"]),
-            "security_findings_available": security_result.succeeded,
+            "security_findings_available": security_result.status.value == "succeeded",
             "security_findings": len(security_findings),
+            "analysis_status": security_result.status.value,
+            "files_scanned": security_result.files_scanned,
         },
         "routes": analysis["routes"],
         "findings": security_findings,
@@ -396,6 +491,10 @@ def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[st
         "errors": analysis["errors"] + to_security_errors(security_result),
         "limitations": analysis["limitations"],
     }
+
+
+def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[str, Any]:
+    return _scan_bundle(UploadBundle(source_zip=source_zip, source_files=(), openapi_json=None), openapi_document)
 
 
 def _frontend_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -408,7 +507,8 @@ def _frontend_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "filePath": finding.get("file_path", ""),
                 "status": "Open",
                 "mitigation": finding.get("remediation"),
-                "source": "Bandit",
+                "source": finding.get("analyzer", "unknown"),
+                "language": finding.get("language"),
             }
         )
     return findings
@@ -504,12 +604,12 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
 
     try:
         body = _read_request_body(environ)
-        source_zip, openapi_bytes = _parse_multipart(
+        upload_bundle = _parse_multipart(
             environ.get("CONTENT_TYPE", ""),
             body,
         )
-        openapi_document = _validate_openapi(openapi_bytes)
-        response = _scan(source_zip, openapi_document)
+        openapi_document = _validate_openapi(upload_bundle.openapi_json)
+        response = _scan_bundle(upload_bundle, openapi_document)
         if frontend_scan:
             response = _store_frontend_scan(response)
     except RequestError as error:
