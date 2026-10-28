@@ -29,6 +29,16 @@ is a standard-library WSGI service, not FastAPI. Live scan requests use the
 centralized service in `src/services/api.js`; failed backend requests are
 shown as errors rather than replaced with mock results.
 
+Check backend readiness before opening the workspace:
+
+```powershell
+curl.exe http://127.0.0.1:8000/health
+```
+
+The response should contain `"status":"ok"`. If the browser reports a
+connection error, the backend process is not running or Vite was started
+before `.env` was created; restart both processes.
+
 ## Frontend features
 
 - Responsive landing page and workspace navigation

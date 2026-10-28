@@ -28,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
 FRONTEND_SCAN_PATH = "/api/scan"
 FRONTEND_SCANS_PREFIX = "/api/scans/"
+HEALTH_PATH = "/health"
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_OPENAPI_BYTES = 2 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 100 * 1024 * 1024
@@ -37,6 +38,7 @@ BOUNDARY_PATTERN = re.compile(r"[0-9A-Za-z'()+_,./:=?-]+\Z")
 CHUNK_SIZE = 64 * 1024
 _SCAN_RESULTS: dict[str, dict[str, Any]] = {}
 _NEXT_SCAN_ID = 1
+MAX_STORED_SCANS = 100
 
 
 class RequestError(Exception):
@@ -52,6 +54,7 @@ def _json_response(
     status: HTTPStatus,
     body: dict[str, Any],
     extra_headers: list[tuple[str, str]] | None = None,
+    cors_origin: str = "http://localhost:5173",
 ) -> list[bytes]:
     encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     start_response(
@@ -59,7 +62,7 @@ def _json_response(
         [
             ("Content-Type", "application/json; charset=utf-8"),
             ("Content-Length", str(len(encoded))),
-            ("Access-Control-Allow-Origin", "http://localhost:5173"),
+            ("Access-Control-Allow-Origin", cors_origin),
             ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
             ("Access-Control-Allow-Headers", "Content-Type"),
         ]
@@ -445,6 +448,8 @@ def _store_frontend_scan(result: dict[str, Any]) -> dict[str, Any]:
     routes = _frontend_routes(result, findings)
     stored = {**result, "id": scan_id, "findings": findings, "routes": routes}
     _SCAN_RESULTS[scan_id] = stored
+    while len(_SCAN_RESULTS) > MAX_STORED_SCANS:
+        del _SCAN_RESULTS[next(iter(_SCAN_RESULTS))]
     return {"id": scan_id, "scan_id": scan_id, "status": result["status"]}
 
 
@@ -452,8 +457,20 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
     """WSGI application for the API Intelligence and frontend scan contracts."""
     path = environ.get("PATH_INFO", "")
     method = environ.get("REQUEST_METHOD", "").upper()
+    origin = environ.get("HTTP_ORIGIN")
+    allowed_origins = {"http://localhost:5173", "http://127.0.0.1:5173"}
+    cors_origin = origin if origin in allowed_origins else "http://localhost:5173"
+    if path == HEALTH_PATH:
+        if method != "GET":
+            return _json_response(start_response, HTTPStatus.METHOD_NOT_ALLOWED, {"error": {"kind": "method_not_allowed", "message": "Use GET for this endpoint."}}, cors_origin=cors_origin)
+        return _json_response(
+            start_response,
+            HTTPStatus.OK,
+            {"status": "ok", "service": "zeroshadow-api-intelligence"},
+            cors_origin=cors_origin,
+        )
     if method == "OPTIONS" and (path == ENDPOINT_PATH or path == FRONTEND_SCAN_PATH or path.startswith(FRONTEND_SCANS_PREFIX)):
-        return _json_response(start_response, HTTPStatus.NO_CONTENT, {})
+        return _json_response(start_response, HTTPStatus.NO_CONTENT, {}, cors_origin=cors_origin)
     frontend_scan = path == FRONTEND_SCAN_PATH
     frontend_resource = path.startswith(FRONTEND_SCANS_PREFIX)
     if frontend_resource and method == "GET":
@@ -461,19 +478,20 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
         scan_id, _, resource = remainder.partition("/")
         result = _SCAN_RESULTS.get(scan_id)
         if result is None:
-            return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan not found."}})
+            return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan not found."}}, cors_origin=cors_origin)
         if resource == "findings":
-            return _json_response(start_response, HTTPStatus.OK, result["findings"])
+            return _json_response(start_response, HTTPStatus.OK, result["findings"], cors_origin=cors_origin)
         if resource == "routes":
-            return _json_response(start_response, HTTPStatus.OK, result["routes"])
+            return _json_response(start_response, HTTPStatus.OK, result["routes"], cors_origin=cors_origin)
         if not resource:
-            return _json_response(start_response, HTTPStatus.OK, result)
-        return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan resource not found."}})
+            return _json_response(start_response, HTTPStatus.OK, result, cors_origin=cors_origin)
+        return _json_response(start_response, HTTPStatus.NOT_FOUND, {"error": {"kind": "not_found", "message": "Scan resource not found."}}, cors_origin=cors_origin)
     if path not in {ENDPOINT_PATH, FRONTEND_SCAN_PATH}:
         return _json_response(
             start_response,
             HTTPStatus.NOT_FOUND,
             {"error": {"kind": "not_found", "message": "Endpoint not found."}},
+            cors_origin=cors_origin,
         )
     if method != "POST":
         return _json_response(
@@ -481,6 +499,7 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
             HTTPStatus.METHOD_NOT_ALLOWED,
             {"error": {"kind": "method_not_allowed", "message": "Use POST for this endpoint."}},
             [("Allow", "POST")],
+            cors_origin=cors_origin,
         )
 
     try:
@@ -498,6 +517,7 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
             start_response,
             error.status,
             {"error": {"kind": error.kind, "message": error.message}},
+            cors_origin=cors_origin,
         )
     except Exception:
         LOGGER.exception("Unexpected API Intelligence scan failure")
@@ -510,8 +530,9 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
                     "message": "The scan could not be completed.",
                 }
             },
+            cors_origin=cors_origin,
         )
-    return _json_response(start_response, HTTPStatus.OK, response)
+    return _json_response(start_response, HTTPStatus.OK, response, cors_origin=cors_origin)
 
 
 if __name__ == "__main__":

@@ -6,13 +6,18 @@ async function request(path, options = {}) {
   if (!configuredBaseUrl) {
     throw new Error("Backend is not configured. Set VITE_API_BASE_URL to use live scans.");
   }
-  const response = await fetch(`${configuredBaseUrl}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...options.headers,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${configuredBaseUrl}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error(`Unable to reach the backend at ${configuredBaseUrl}. Start it with "python -m api_intelligence.http_api" and restart Vite after changing .env.`);
+  }
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Backend request failed (${response.status}): ${body || response.statusText}`);

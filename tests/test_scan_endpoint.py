@@ -127,6 +127,37 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(routes["status"], "200 OK")
         self.assertIsInstance(routes["body"], list)
 
+    def test_health_endpoint_and_local_cors_origins(self):
+        result = self.request([], method="GET", path="/health")
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(result["body"]["status"], "ok")
+        self.assertEqual(
+            result["headers"]["Access-Control-Allow-Origin"],
+            "http://localhost:5173",
+        )
+
+        environ = {}
+        setup_testing_defaults(environ)
+        environ.update(
+            {
+                "REQUEST_METHOD": "GET",
+                "PATH_INFO": "/health",
+                "HTTP_ORIGIN": "http://127.0.0.1:5173",
+                "wsgi.input": io.BytesIO(b""),
+            }
+        )
+        captured = {}
+
+        def start_response(status, headers):
+            captured["status"] = status
+            captured["headers"] = dict(headers)
+
+        application(environ, start_response)
+        self.assertEqual(
+            captured["headers"]["Access-Control-Allow-Origin"],
+            "http://127.0.0.1:5173",
+        )
+
     def test_rejects_invalid_zip(self):
         result = self.request(
             [("source_zip", "project.zip", b"not a zip archive", "application/zip")]
