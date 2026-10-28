@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from cvss import CVSS4
+from cvss.exceptions import CVSS4Error
+
 from .models import Finding, ScanResult
 
 
@@ -32,7 +35,7 @@ def to_security_errors(result: ScanResult) -> list[dict[str, Any]]:
 
 def _finding_to_v1(finding: Finding) -> dict[str, Any]:
     description = finding.description
-    return {
+    adapted = {
         "rule_id": finding.rule_id,
         "title": description,
         "description": description,
@@ -44,3 +47,21 @@ def _finding_to_v1(finding: Finding) -> dict[str, Any]:
         "remediation": finding.remediation,
         "references": list(finding.references),
     }
+    if finding.cvss_vector is None or finding.severity.upper() in {"INFO", "INFORMATIONAL"}:
+        return adapted
+
+    try:
+        cvss = CVSS4(finding.cvss_vector)
+    except CVSS4Error:
+        return adapted
+
+    adapted.update(
+        {
+            "severity": cvss.severities()[0].lower(),
+            "cvss_version": "4.0",
+            "cvss_score": cvss.scores()[0],
+            "cvss_vector": cvss.clean_vector(),
+            "cvss_calculated": True,
+        }
+    )
+    return adapted

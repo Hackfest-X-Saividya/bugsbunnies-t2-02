@@ -33,6 +33,11 @@ def normalize_bandit_results(payload: Mapping[str, Any]) -> list[Finding]:
                 owasp_category=owasp_for_rule(rule_id),
                 remediation=remediation_for_rule(rule_id),
                 references=tuple(raw.get("more_info") for _ in [0] if isinstance(raw.get("more_info"), str)),
+                cvss_vector=(
+                    raw.get("cvss_vector")
+                    if isinstance(raw.get("cvss_vector"), str)
+                    else None
+                ),
             )
         )
     return findings

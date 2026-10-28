@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Safe, contract-neutral Python security intelligence services for ZeroShadow AI."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["cvss>=3.6,<4"]
 
 [project.optional-dependencies]
 scanner = ["bandit>=1.7,<2"]

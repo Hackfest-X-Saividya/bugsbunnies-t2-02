@@ -91,8 +91,9 @@ have a `.json` filename and contain UTF-8 JSON with a `paths` object. The
 request is limited to 20 MiB, OpenAPI input to 2 MiB, extraction to 100 MiB,
 and 5,000 ZIP entries. ZIP paths must be relative and may not contain parent
 traversal; symbolic links and special files are rejected. Uploaded code is
-never executed, and the temporary extraction directory is removed after
-analysis.
+never executed. The server verifies the archive contents, including member
+integrity, before extracting any files. The temporary extraction directory is
+removed after analysis.
 
 A successful response has this shape:
 

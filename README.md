@@ -20,6 +20,14 @@ To enable backend integration, copy `.env.example` to `.env`, set `VITE_API_BASE
 - ZIP upload validation (50 MB maximum) and sample project demos
 - Searchable API explorer and endpoint risk inspection with finding excerpts
 - Scan history and workspace integration settings
-- Printable report and downloadable CSV export
+- Printable report and downloadable PDF export
+
+Finding severity labels retain scanner-provided ratings unless a valid CVSS 4.0
+vector is available. The backend calculates CVSS 4.0 scores from the complete
+vector, including supported threat and environmental metrics, and the UI derives
+severity from the calculated score: Critical (9.0–10.0), High (7.0–8.9),
+Medium (4.0–6.9), Low (0.1–3.9), or None (0.0). The current Bandit integration
+does not provide CVSS metrics, so its findings retain Bandit's severity labels
+and show CVSS scores as unavailable.
 
 All included scan results and source excerpts are fictional demonstration data. The browser does not execute uploaded source code.
