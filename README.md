@@ -185,6 +185,43 @@ response adapter, integrate with the existing backend once it exists, and add
 contract tests. ML and endpoint correlation remain out of scope until the
 contract and evidence requirements are defined.
 
+## Package-level upload workflow
+
+The package now provides `UploadScanWorkflow` for a future HTTP adapter. It
+accepts archive bytes or a local archive path, validates ZIP members and
+resource limits, calls an injected `MalwareScanner`, and runs Bandit only when
+the malware result is `clean`. Suspicious, malware-detected, unavailable, and
+scanner-failure results are quarantined and create a pending review; they
+cannot reach static analysis through the workflow API.
+
+```python
+from zeroshadow_security import UploadScanWorkflow
+
+result = UploadScanWorkflow().submit_archive(
+    archive_bytes,
+    upload_id="upload-123",
+    uploader_id="user-456",
+)
+if result.scan is not None:
+    findings = result.scan.findings
+elif result.review is not None:
+    review_id = result.review.review_id
+```
+
+`UploadLimits` configures archive bytes, file count, decompressed bytes,
+archive depth, and scanner timeout. Archive paths are checked for traversal
+and symlinks before extraction. No uploaded file is executed. The default
+ClamAV adapter reports an unavailable result when its executable is absent;
+unavailable is never treated as clean.
+
+`ManagerReviewService` requires an injected `AuthorizationPolicy`,
+`ReviewRepository`, and `NotificationSink` for production integration. The
+included in-memory implementations are explicitly for local development and
+tests only. Production deployment must replace them with authenticated
+identity/role resolution, durable database storage, restricted quarantine
+storage and lifecycle cleanup, and a durable notification provider. Approval
+sets `execution_allowed` to `False` and authorizes static analysis only.
+
 ## License
 
 No license has been supplied in the repository.
