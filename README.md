@@ -15,12 +15,10 @@ This repository currently contains the first, contract-neutral security engine:
   evidence, curated OWASP mappings, and conservative remediation text;
 - deterministic internal risk prioritization (not an ML prediction).
 
-No public backend or authoritative **Vulnerability / Scanning API Response**
-schema is present in the repository or supplied project files. The engine
-therefore deliberately does **not** invent or serialize a competing public
-response contract. The `ScanResult.to_internal_dict()` method is explicitly
-internal and must not be used as an API response until the team supplies the
-authoritative schema.
+The backend endpoint and upload handling are owned by another module. The
+engine keeps `ScanResult.to_internal_dict()` as its stable internal format and
+provides a separate v1 adapter for the agreed `security_findings` fields. It
+does not implement or serialize the complete top-level API response.
 
 ## How it works
 
@@ -31,7 +29,7 @@ Python project
 eligible-file checks ---> Bandit (JSON, no shell, no application execution)
       |
       v
-normalized internal ScanResult ---> API adapter (to be implemented against the agreed schema)
+normalized internal ScanResult ---> v1 security_findings adapter ---> backend response
 ```
 
 Static analysis identifies source-level patterns. API intelligence can consume
@@ -94,8 +92,41 @@ The verified serialized result shape from a real temporary fixture is:
 
 The temporary fixture's absolute path and scan duration vary by machine.
 Optional finding fields are serialized as `null` when unavailable, while
-`references` is always an array. This is the internal result format, not yet
-the application's final public Vulnerability / Scanning API contract.
+`references` is always an array. This is the internal result format. Use the v1 adapter below when inserting
+security findings into the backend-owned response.
+
+## v1 adapter handoff
+
+The backend owns `POST /api/v1/scan`, multipart uploads, and the complete v1
+response. This package provides only the security portion of that response:
+
+```python
+from zeroshadow_security import (
+    SecurityIntelligenceService,
+    to_security_errors,
+    to_security_findings,
+)
+
+result = SecurityIntelligenceService().scan(project_directory)
+security_findings = to_security_findings(result)
+security_errors = to_security_errors(result)
+```
+
+`security_findings` uses the agreed fields `rule_id`, `title`,
+`description`, `severity`, `file_path`, `line`, `evidence`, `owasp_category`,
+`remediation`, and `references`. Bandit has no separate title value, so the
+existing issue description is used for both `title` and `description`.
+Internal Bandit severity values are converted to lowercase at this adapter
+boundary (`HIGH` becomes `high`, `MEDIUM` becomes `medium`, and `LOW` becomes
+`low`). Unsupported finding values remain `null`, and `references` remains an
+array. The adapter does not deduplicate findings; distinct source locations
+remain distinct.
+
+Security scanner errors are converted to `code`, `message`, and
+`stage="security_scan"`, with `details` included only when available. The
+backend should place these in its security error collection and decide the
+overall v1 status. This branch does not implement the endpoint, upload
+handling, API Intelligence integration, or top-level response.
 
 ## Test
 
