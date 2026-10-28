@@ -28,6 +28,7 @@ from zeroshadow_security.adapter import to_security_errors, to_security_findings
 LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
 FRONTEND_SCAN_PATH = "/api/scan"
+EXPLAIN_PATH = "/api/explain"
 FRONTEND_SCANS_PREFIX = "/api/scans/"
 HEALTH_PATH = "/health"
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
@@ -126,6 +127,78 @@ def _read_request_body(environ: dict[str, Any]) -> bytes:
             "The request body length does not match Content-Length.",
         )
     return body
+
+
+def _read_json_request(environ: dict[str, Any]) -> dict[str, Any]:
+    content_type = environ.get("CONTENT_TYPE", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/json":
+        raise RequestError(
+            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            "invalid_content_type",
+            "This endpoint requires an application/json request.",
+        )
+    body = _read_request_body(environ)
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise RequestError(
+            HTTPStatus.BAD_REQUEST,
+            "invalid_json",
+            "The request body must contain valid JSON.",
+        ) from None
+    if not isinstance(payload, dict):
+        raise RequestError(
+            HTTPStatus.BAD_REQUEST,
+            "invalid_json",
+            "The request body must be a JSON object.",
+        )
+    return payload
+
+
+def _explain_request(payload: dict[str, Any]) -> dict[str, str]:
+    endpoint = payload.get("endpoint")
+    findings = payload.get("findings", [])
+    if not isinstance(endpoint, dict) or not isinstance(findings, list):
+        raise RequestError(
+            HTTPStatus.BAD_REQUEST,
+            "invalid_explanation_request",
+            "The explanation request must include an endpoint object and findings array.",
+        )
+
+    path = endpoint.get("path", "the selected endpoint")
+    method = endpoint.get("method", "")
+    endpoint_label = f"{method} {path}".strip()
+    if not endpoint_label:
+        endpoint_label = "the selected endpoint"
+    valid_findings = [
+        finding
+        for finding in findings
+        if isinstance(finding, dict) and isinstance(finding.get("title"), str)
+    ]
+    if not valid_findings:
+        return {
+            "explanation": (
+                f"No scanner findings are associated with {endpoint_label}. "
+                "This does not prove that the endpoint is risk-free; review its "
+                "authentication, authorization, input validation, and error handling."
+            )
+        }
+
+    descriptions = []
+    for finding in valid_findings[:20]:
+        severity = str(finding.get("severity", "unknown")).lower()
+        risk = finding.get("risk_level")
+        risk_text = f", assessed {risk} risk" if isinstance(risk, str) else ""
+        descriptions.append(f"{finding['title']} ({severity} severity{risk_text})")
+    return {
+        "explanation": (
+            f"{endpoint_label} has {len(valid_findings)} associated scanner signal"
+            f"{'' if len(valid_findings) == 1 else 's'}: "
+            + "; ".join(descriptions)
+            + ". Treat these as potential issues and verify them against the "
+            "complete source and deployment context before remediation."
+        )
+    }
 
 
 def _parse_multipart(content_type: str, body: bytes) -> UploadBundle:
@@ -571,6 +644,25 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
         )
     if method == "OPTIONS" and (path == ENDPOINT_PATH or path == FRONTEND_SCAN_PATH or path.startswith(FRONTEND_SCANS_PREFIX)):
         return _json_response(start_response, HTTPStatus.NO_CONTENT, {}, cors_origin=cors_origin)
+    if path == EXPLAIN_PATH:
+        if method != "POST":
+            return _json_response(
+                start_response,
+                HTTPStatus.METHOD_NOT_ALLOWED,
+                {"error": {"kind": "method_not_allowed", "message": "Use POST for this endpoint."}},
+                [("Allow", "POST")],
+                cors_origin=cors_origin,
+            )
+        try:
+            response = _explain_request(_read_json_request(environ))
+        except RequestError as error:
+            return _json_response(
+                start_response,
+                error.status,
+                {"error": {"kind": error.kind, "message": error.message}},
+                cors_origin=cors_origin,
+            )
+        return _json_response(start_response, HTTPStatus.OK, response, cors_origin=cors_origin)
     frontend_scan = path == FRONTEND_SCAN_PATH
     frontend_resource = path.startswith(FRONTEND_SCANS_PREFIX)
     if frontend_resource and method == "GET":
@@ -637,6 +729,13 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    with make_server("127.0.0.1", 8000, application) as server:
-        LOGGER.info("API Intelligence endpoint listening on http://127.0.0.1:8000")
+    host = os.environ.get("ZEROSHADOW_API_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("ZEROSHADOW_API_PORT", "8000"))
+    except ValueError:
+        raise SystemExit("ZEROSHADOW_API_PORT must be an integer.") from None
+    if not 1 <= port <= 65535:
+        raise SystemExit("ZEROSHADOW_API_PORT must be between 1 and 65535.")
+    with make_server(host, port, application) as server:
+        LOGGER.info("API Intelligence endpoint listening on http://%s:%d", host, port)
         server.serve_forever()

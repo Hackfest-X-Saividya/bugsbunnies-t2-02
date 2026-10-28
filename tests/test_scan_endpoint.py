@@ -5,7 +5,7 @@ import zipfile
 from unittest.mock import patch
 from wsgiref.util import setup_testing_defaults
 
-from api_intelligence.http_api import ENDPOINT_PATH, application
+from api_intelligence.http_api import ENDPOINT_PATH, EXPLAIN_PATH, application
 
 
 class ScanEndpointTests(unittest.TestCase):
@@ -47,6 +47,29 @@ class ScanEndpointTests(unittest.TestCase):
                 "CONTENT_TYPE": f"multipart/form-data; boundary={self.boundary}",
                 "CONTENT_LENGTH": str(len(request_body)),
                 "wsgi.input": io.BytesIO(request_body),
+            }
+        )
+        captured = {}
+
+        def start_response(status, headers):
+            captured["status"] = status
+            captured["headers"] = dict(headers)
+
+        response_body = b"".join(application(environ, start_response))
+        captured["body"] = json.loads(response_body) if response_body else None
+        return captured
+
+    def json_request(self, payload, method="POST", path=EXPLAIN_PATH):
+        body = json.dumps(payload).encode()
+        environ = {}
+        setup_testing_defaults(environ)
+        environ.update(
+            {
+                "REQUEST_METHOD": method,
+                "PATH_INFO": path,
+                "CONTENT_TYPE": "application/json",
+                "CONTENT_LENGTH": str(len(body)),
+                "wsgi.input": io.BytesIO(body),
             }
         )
         captured = {}
@@ -189,6 +212,28 @@ class ScanEndpointTests(unittest.TestCase):
             result["headers"]["Access-Control-Allow-Origin"],
             "http://localhost:5173",
         )
+
+    def test_explanation_endpoint_returns_backend_explanation(self):
+        result = self.json_request(
+            {
+                "endpoint": {"method": "GET", "path": "/items"},
+                "findings": [
+                    {
+                        "title": "Unsafe input handling",
+                        "severity": "high",
+                        "risk_level": "critical",
+                    }
+                ],
+            }
+        )
+        self.assertEqual(result["status"], "200 OK")
+        self.assertIn("GET /items", result["body"]["explanation"])
+        self.assertIn("Unsafe input handling", result["body"]["explanation"])
+
+    def test_explanation_endpoint_validates_json_contract(self):
+        result = self.json_request({"endpoint": "not-an-object", "findings": {}})
+        self.assertEqual(result["status"], "400 Bad Request")
+        self.assertEqual(result["body"]["error"]["kind"], "invalid_explanation_request")
 
         environ = {}
         setup_testing_defaults(environ)
