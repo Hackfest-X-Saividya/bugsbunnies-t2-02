@@ -21,6 +21,8 @@ test("creates a valid PDF report with the complete finding documentation", () =>
         description: "User input is inserted into a query.",
         mitigation: "Use a parameterized query.",
         source: "Static scanner",
+        evidence: 'query = f"SELECT * FROM users WHERE id = {user_id}"',
+        confidence: "Medium",
       },
     ],
   };
@@ -41,9 +43,53 @@ test("creates a valid PDF report with the complete finding documentation", () =>
     "User input is inserted into a query.",
     "Use a parameterized query.",
     "Static scanner",
+    "CVSS 4.0 score unavailable",
+    "Evidence",
+    "Medium",
   ]) {
     assert.ok(content.includes(value), `PDF should contain ${value}`);
   }
+});
+
+test("shows informational findings without inventing CVSS ratings", () => {
+  const pdf = Buffer.from(createReportPdf({
+    id: "rated-scan",
+    projectName: "rated-project",
+    status: "Completed",
+    findings: [{
+      id: "INFO-1",
+      title: "Informational route note",
+      severity: "Informational",
+    }],
+    endpoints: [],
+  })).toString("latin1");
+
+  assert.ok(pdf.includes("Informational findings are not assigned a CVSS score."));
+  assert.ok(pdf.includes("INFORMATIONAL FINDINGS"));
+  assert.ok(pdf.includes("CVSS 4.0 calculated score"));
+});
+
+test("includes backend-calculated CVSS score and matching severity in the PDF", () => {
+  const content = Buffer.from(createReportPdf({
+    id: "cvss-scan",
+    projectName: "cvss-project",
+    status: "Completed",
+    findings: [{
+      id: "CVSS-1",
+      title: "Validated vector",
+      severity: "critical",
+      cvss_version: "4.0",
+      cvss_score: 9.9,
+      cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:N",
+      cvss_calculated: true,
+    }],
+    endpoints: [],
+  })).toString("latin1");
+
+  assert.ok(content.includes("Critical"));
+  assert.ok(content.includes("CVSS 4.0 calculated score"));
+  assert.ok(content.includes("9.9"));
+  assert.ok(content.includes("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:N"));
 });
 
 test("creates a PDF report for scans with no findings", () => {

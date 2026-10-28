@@ -119,3 +119,109 @@ def test_distinct_findings_are_not_deduplicated():
 
     assert len(adapted) == 2
     assert adapted[0]["file_path"] != adapted[1]["file_path"]
+
+
+def test_calculates_cvss_from_vector_and_ignores_supplied_score():
+    from zeroshadow_security.normalize import normalize_bandit_results
+
+    findings = normalize_bandit_results(
+        {
+            "results": [
+                {
+                    "test_id": "B999",
+                    "issue_text": "Potential issue",
+                    "issue_severity": "LOW",
+                    "filename": "app.py",
+                    "cvss_vector": (
+                        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/"
+                        "VA:H/SC:H/SI:H/SA:N"
+                    ),
+                    "cvss_score": 0.0,
+                }
+            ]
+        }
+    )
+    result = ScanResult(ScanStatus.SUCCEEDED, findings=findings)
+
+    adapted = to_security_findings(result)[0]
+
+    assert adapted["severity"] == "critical"
+    assert adapted["cvss_score"] == 9.9
+    assert adapted["cvss_version"] == "4.0"
+    assert adapted["cvss_calculated"] is True
+    assert adapted["cvss_vector"] == findings[0].cvss_vector
+
+
+def test_calculates_vectors_with_threat_and_environmental_metrics():
+    finding = Finding(
+        "B999",
+        "Potential issue",
+        "HIGH",
+        "app.py",
+        cvss_vector=(
+            "CVSS:4.0/AV:A/AC:H/AT:P/PR:N/UI:P/VC:N/VI:L/VA:N/SC:H/SI:H/"
+            "AU:N/SA:N/S:N/R:A/V:C/RE:M/U:Green/MAV:L/MAC:L/MAT:P/MPR:L/"
+            "MUI:A/MVC:N/MVI:L/MVA:H/MSC:L/MSI:N/MSA:S/CR:L/IR:L/AR:M/E:P"
+        ),
+    )
+    result = ScanResult(ScanStatus.SUCCEEDED, findings=[finding])
+
+    adapted = to_security_findings(result)[0]
+
+    assert adapted["cvss_score"] == 3.5
+    assert adapted["severity"] == "low"
+    assert adapted["cvss_calculated"] is True
+    assert "/E:P/" in adapted["cvss_vector"]
+    assert "/MAV:L/" in adapted["cvss_vector"]
+
+
+def test_invalid_or_incomplete_vectors_do_not_create_cvss_ratings():
+    result = ScanResult(
+        ScanStatus.SUCCEEDED,
+        findings=[
+            Finding(
+                "B999",
+                "Potential issue",
+                "LOW",
+                "app.py",
+                cvss_vector="CVSS:4.0/AV:N/AC:L",
+            ),
+            Finding(
+                "B998",
+                "Malformed vector",
+                "MEDIUM",
+                "other.py",
+                cvss_vector="CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:J",
+            ),
+        ],
+    )
+
+    adapted = to_security_findings(result)
+
+    assert [item["severity"] for item in adapted] == ["low", "medium"]
+    assert all("cvss_score" not in item for item in adapted)
+    assert all("cvss_calculated" not in item for item in adapted)
+
+
+def test_informational_findings_never_receive_cvss_scores():
+    result = ScanResult(
+        ScanStatus.SUCCEEDED,
+        findings=[
+            Finding(
+                "INFO",
+                "Route discovered",
+                "INFORMATIONAL",
+                "app.py",
+                cvss_vector=(
+                    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/"
+                    "VA:H/SC:H/SI:H/SA:N"
+                ),
+            )
+        ],
+    )
+
+    adapted = to_security_findings(result)[0]
+
+    assert adapted["severity"] == "informational"
+    assert "cvss_score" not in adapted
+    assert "cvss_calculated" not in adapted

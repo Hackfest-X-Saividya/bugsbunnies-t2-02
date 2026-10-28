@@ -1,6 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { SeverityBadge } from "./Primitives.jsx";
+import { FindingRating } from "./Primitives.jsx";
 
 export default function FindingsTable({ items, compact = false }) {
   return (
@@ -11,8 +11,8 @@ export default function FindingsTable({ items, compact = false }) {
           {items.map((finding) => (
             <tr key={finding.id}>
               <td><div className="finding-name">{finding.title}</div><div className="muted small">{finding.id}</div></td>
-              <td><SeverityBadge severity={finding.severity} /></td>
-              <td><span className="mono">{finding.filePath}:{finding.line}</span></td>
+              <td><FindingRating finding={finding} /></td>
+              <td><span className="mono">{finding.filePath ?? finding.file_path}:{finding.line}</span></td>
               {!compact && <td><span className="mono">{finding.endpoint || "—"}</span></td>}
               <td><span className="review-status"><span />{finding.status}</span></td>
               <td><Link className="table-action" to={finding.endpointId ? `/endpoints/${finding.endpointId}` : "/explorer"} aria-label={`Inspect ${finding.title}`}><ArrowUpRight size={16} /></Link></td>

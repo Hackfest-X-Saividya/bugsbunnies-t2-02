@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, MethodBadge, PageHeader, SeverityBadge } from "../components/Primitives.jsx";
+import { DemoNotice, FindingRating, MethodBadge, PageHeader } from "../components/Primitives.jsx";
 import CodeViewer from "../components/CodeViewer.jsx";
 import { explainFinding } from "../services/api.js";
 
@@ -20,8 +20,8 @@ export default function EndpointDetails() {
   const remediation = related[0]?.mitigation || "No scanner finding is associated with this route. Review authentication, authorization, input validation, and error handling as part of your normal security review.";
   const copyFix = async (finding) => {
     try {
-      await navigator.clipboard.writeText(finding?.mitigation || remediation);
-      setCopied(finding?.id || "all");
+      await navigator.clipboard.writeText(finding?.mitigation || finding?.remediation || remediation);
+      setCopied(finding?.id || finding?.rule_id || "all");
       window.setTimeout(() => setCopied(""), 1600);
     } catch (error) {
       setExplainError(`Could not copy to clipboard: ${error.message}`);
@@ -62,7 +62,7 @@ export default function EndpointDetails() {
       <div className="inspection-main">
         <CodeViewer endpoint={endpoint} findings={related} />
         <section className="panel findings-detail-panel"><div className="panel-heading"><div><h2>Associated findings</h2><p>Signals mapped to this endpoint</p></div><span className="count-chip">{related.length}</span></div>
-          {related.length ? related.map((finding) => <article className="detail-finding" key={finding.id}><div className="detail-finding-head"><div><SeverityBadge severity={finding.severity} /><span className="muted small mono">{finding.id}</span></div><span className="potential-label">Potential · verify manually</span></div><h3>{finding.title}</h3><p>{finding.description}</p><div className="finding-source"><span>{finding.filePath}:{finding.line}</span><span>Detection: {finding.source}</span><span>{finding.confidence}</span></div><div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.mitigation}</p></div><button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === finding.id ? "Copied" : "Copy fix"}</button></div></article>) : <div className="no-findings"><span><Check size={17} /></span><div><strong>No scanner findings linked</strong><p>This route has no associated findings in this scan. This does not guarantee that the endpoint is risk-free.</p></div></div>}
+          {related.length ? related.map((finding) => <article className="detail-finding" key={finding.id}><div className="detail-finding-head"><div><FindingRating finding={finding} /><span className="muted small mono">{finding.id || finding.rule_id}</span></div><span className="potential-label">Potential · verify manually</span></div><h3>{finding.title || finding.rule_id}</h3><div className="finding-source"><span>{finding.filePath ?? finding.file_path}:{finding.line}</span><span>Detection: {finding.source || finding.rule_id}</span>{finding.confidence && <span>{finding.confidence}</span>}</div><div className="finding-impact"><strong>Security impact</strong><p>{finding.impact || finding.description}</p></div>{(finding.evidence || finding.code) && <div className="finding-evidence"><strong>Evidence</strong><pre>{finding.evidence || finding.code}</pre></div>}<div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.mitigation || finding.remediation || "Review and remediate this finding based on the verified source context."}</p></div><button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === finding.id ? "Copied" : "Copy fix"}</button></div></article>) : <div className="no-findings"><span><Check size={17} /></span><div><strong>No scanner findings linked</strong><p>This route has no associated findings in this scan. This does not guarantee that the endpoint is risk-free.</p></div></div>}
         </section>
       </div>
       <aside className="inspection-aside">

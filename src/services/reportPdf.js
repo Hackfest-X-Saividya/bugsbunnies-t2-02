@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { resolveFindingRating, SEVERITY_ORDER } from "./findingRating.js";
 
 const PAGE_MARGIN = 18;
 const FOOTER_SPACE = 20;
@@ -16,9 +17,9 @@ export function createReportPdf(scan, generatedAt = new Date()) {
   const contentWidth = pageWidth - PAGE_MARGIN * 2;
   const findings = scan.findings ?? [];
   const endpoints = scan.endpoints ?? [];
-  const severityCounts = ["High", "Medium", "Low"].map((severity) => ({
+  const severityCounts = SEVERITY_ORDER.map((severity) => ({
     severity,
-    count: findings.filter((finding) => finding.severity === severity).length,
+    count: findings.filter((finding) => resolveFindingRating(finding).severity === severity).length,
   }));
   const affectedEndpoints = new Set(
     findings.map((finding) => finding.endpointId).filter(Boolean),
@@ -99,7 +100,7 @@ export function createReportPdf(scan, generatedAt = new Date()) {
 
   addSectionTitle("Application security analysis summary");
   addField("TOTAL FINDINGS", `${findings.length} potential scanner findings`);
-  severityCounts.forEach(({ severity, count }) => addField(`${severity.toUpperCase()} SEVERITY`, count));
+  severityCounts.forEach(({ severity, count }) => addField(`${severity.toUpperCase()} FINDINGS`, count));
   addField(
     "AFFECTED ENDPOINTS",
     `${affectedEndpoints} of ${endpoints.length} discovered routes`,
@@ -116,19 +117,48 @@ export function createReportPdf(scan, generatedAt = new Date()) {
     const fields = [
       ["ID", "id"],
       ["Title", "title"],
-      ["Severity", "severity"],
+      ["Severity", null],
+      ["CVSS 4.0 calculated score", null],
+      ["CVSS 4.0 vector", null],
       ["Status", "status"],
       ["File", "filePath"],
       ["Line", "line"],
       ["Endpoint", "endpoint"],
       ["Description", "description"],
+      ["Evidence", "evidence"],
+      ["Impact", "impact"],
+      ["Confidence", "confidence"],
       ["Mitigation", "mitigation"],
       ["Detection source", "source"],
     ];
 
     findings.forEach((finding, index) => {
+      const rating = resolveFindingRating(finding);
       addSectionTitle(`Finding ${index + 1}: ${displayValue(finding.title)}`);
-      fields.forEach(([label, key]) => addField(label, finding[key]));
+      fields.forEach(([label, key]) => {
+        if (label === "Severity") {
+          addField(label, rating.severity);
+        } else if (label === "CVSS 4.0 calculated score") {
+          addField(label, rating.cvssScore === null
+            ? rating.scoreNote
+            : rating.cvssScore.toFixed(1));
+        } else if (label === "CVSS 4.0 vector") {
+          addField(label, rating.cvssVector);
+        } else {
+          const value = key === "filePath"
+            ? finding.filePath ?? finding.file_path
+            : key === "line"
+              ? finding.line ?? finding.line_number
+              : key === "mitigation"
+              ? finding.mitigation ?? finding.remediation
+              : key === "evidence"
+                ? finding.evidence ?? finding.code
+                : key === "impact"
+                  ? finding.impact ?? finding.description
+                : finding[key];
+          addField(label, value);
+        }
+      });
       cursorY += 3;
     });
   }
