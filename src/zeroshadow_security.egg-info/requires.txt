@@ -1,6 +1,0 @@
-
-[scanner]
-bandit<2,>=1.7
-
-[test]
-pytest<9,>=8
