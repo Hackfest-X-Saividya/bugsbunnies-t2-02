@@ -20,6 +20,6 @@ To enable backend integration, copy `.env.example` to `.env`, set `VITE_API_BASE
 - ZIP upload validation (50 MB maximum) and sample project demos
 - Searchable API explorer and endpoint risk inspection with finding excerpts
 - Scan history and workspace integration settings
-- Printable report and downloadable CSV export
+- Printable report and downloadable PDF export
 
 All included scan results and source excerpts are fictional demonstration data. The browser does not execute uploaded source code.
