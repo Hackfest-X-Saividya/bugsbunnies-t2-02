@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowRight, ArrowUpRight, Braces, Crosshair, LockKeyhole, Shield, Sparkles } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const features = [
   { icon: Braces, title: "Intelligent code analysis", text: "Spot risky patterns in Python projects with findings designed to give developers useful context." },
@@ -8,11 +8,15 @@ const features = [
 ];
 
 export default function LandingPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   return <main className="landing-page">
     <header className="landing-nav">
       <Link to="/" className="brand"><span className="brand-mark"><Shield size={20} /></span><span><strong>ShadowGuard</strong><small>AI SECURITY PLATFORM</small></span></Link>
-      <nav><a href="#features">Platform</a><a href="#workflow">How it works</a><span className="landing-divider" /><Link to="/dashboard" className="nav-signin">Sign in <ArrowUpRight size={14} /></Link><Link to="/scan" className="button button-primary nav-cta">Start scanning <ArrowRight size={15} /></Link></nav>
+      <nav><a href="#workflow" onClick={(event) => { event.preventDefault(); document.getElementById("workflow")?.scrollIntoView({ behavior: "instant", block: "start" }); window.history.replaceState(null, "", "#workflow"); }}>How it works</a><span className="landing-divider" /><button type="button" className="button button-quiet nav-signin" onClick={() => navigate("/dashboard", { state: { demoMessage: "Demo sign-in only — no authentication took place. You are viewing the local demonstration workspace." } })}>Demo sign in <ArrowUpRight size={14} /></button><Link to="/scan" className="button button-primary nav-cta">Start scanning <ArrowRight size={15} /></Link></nav>
     </header>
+    {location.state?.demoMessage && <div className="landing-demo-message" role="status"><Shield size={14} />{location.state.demoMessage}</div>}
     <section className="hero-section">
       <div className="hero-grid">
         <div className="hero-copy">

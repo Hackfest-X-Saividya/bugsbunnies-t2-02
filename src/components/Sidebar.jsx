@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import {
-  Activity, ChevronLeft, FileClock, FileText, LayoutDashboard, Menu, ScanLine, Settings,
+  Activity, ChevronDown, ChevronLeft, FileClock, FileText, LayoutDashboard, Menu, ScanLine, Settings,
   Shield, X, Waypoints,
 } from "lucide-react";
 
@@ -16,6 +16,24 @@ const links = [
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspaceRef = useRef(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (workspaceRef.current && !workspaceRef.current.contains(event.target)) setWorkspaceOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setWorkspaceOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
     <>
       <button className="mobile-menu icon-button" aria-label="Open navigation menu" onClick={() => setOpen(true)}>
@@ -41,10 +59,20 @@ export default function Sidebar() {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-status"><span className="status-dot" /><span>Analysis engine ready</span><Activity size={14} /></div>
-          <div className="profile-card">
+          <div className="workspace-menu-wrap" ref={workspaceRef}>
+          <button type="button" className="profile-card" aria-haspopup="dialog" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((current) => !current)}>
             <div className="avatar">SG</div>
             <div className="profile-copy"><strong>Security workspace</strong><span>Free plan · Demo mode</span></div>
-            <ChevronLeft size={16} className="profile-chevron" />
+            <ChevronDown size={16} className={`profile-chevron ${workspaceOpen ? "is-open" : ""}`} />
+          </button>
+          {workspaceOpen && <section className="workspace-popover" role="dialog" aria-label="Security workspace information">
+            <div className="workspace-popover-heading"><div className="avatar">SG</div><div><strong>Security workspace</strong><span>Personal demo workspace</span></div></div>
+            <div className="workspace-info-row"><span>Plan</span><strong>Free · Demo</strong></div>
+            <div className="workspace-info-row"><span>Current scan</span><strong>Illustrative results</strong></div>
+            <p>Workspace data shown here is local demo content. No account or live scan is connected.</p>
+            <Link to="/settings" className="workspace-settings-link" onClick={() => { setWorkspaceOpen(false); setOpen(false); }}>Workspace settings <ChevronLeft size={14} /></Link>
+            <button type="button" className="workspace-close" onClick={() => setWorkspaceOpen(false)}>Close</button>
+          </section>}
           </div>
         </div>
       </aside>

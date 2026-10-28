@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, MethodBadge, PageHeader, SeverityBadge } from "../components/Primitives.jsx";
@@ -8,13 +8,18 @@ import { explainFinding } from "../services/api.js";
 
 export default function EndpointDetails() {
   const { id } = useParams();
-  const { scan } = useScan();
+  const { scan, getReview, updateReview, removeFlag } = useScan();
   const [copied, setCopied] = useState("");
   const [explanation, setExplanation] = useState("");
   const [explainError, setExplainError] = useState("");
   const [explaining, setExplaining] = useState(false);
   const endpoint = scan.endpoints.find((item) => item.id === id);
-  const related = useMemo(() => endpoint ? scan.findings.filter((finding) => endpoint.findings?.includes(finding.id)) : [], [endpoint, scan.findings]);
+  const related = useMemo(() => endpoint ? scan.findings.filter((finding) => (
+    endpoint.findings?.includes(finding.id)
+    || finding.endpointId === endpoint.id
+    || finding.endpoint === `${endpoint.method} ${endpoint.path}`
+    || finding.endpoint === endpoint.path
+  )) : [], [endpoint, scan.findings]);
   if (!endpoint) return <div className="page-content"><Link className="back-link" to="/explorer"><ArrowLeft size={15} /> Back to API Explorer</Link><div className="panel not-found"><ShieldAlert size={25} /><h2>Endpoint not found</h2><p>This route is not included in the currently selected scan.</p><Link className="button button-outline" to="/explorer">Browse API Explorer</Link></div></div>;
 
   const remediation = related[0]?.mitigation || "No scanner finding is associated with this route. Review authentication, authorization, input validation, and error handling as part of your normal security review.";
@@ -62,7 +67,23 @@ export default function EndpointDetails() {
       <div className="inspection-main">
         <CodeViewer endpoint={endpoint} findings={related} />
         <section className="panel findings-detail-panel"><div className="panel-heading"><div><h2>Associated findings</h2><p>Signals mapped to this endpoint</p></div><span className="count-chip">{related.length}</span></div>
-          {related.length ? related.map((finding) => <article className="detail-finding" key={finding.id}><div className="detail-finding-head"><div><SeverityBadge severity={finding.severity} /><span className="muted small mono">{finding.id}</span></div><span className="potential-label">Potential · verify manually</span></div><h3>{finding.title}</h3><p>{finding.description}</p><div className="finding-source"><span>{finding.filePath}:{finding.line}</span><span>Detection: {finding.source}</span><span>{finding.confidence}</span></div><div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.mitigation}</p></div><button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === finding.id ? "Copied" : "Copy fix"}</button></div></article>) : <div className="no-findings"><span><Check size={17} /></span><div><strong>No scanner findings linked</strong><p>This route has no associated findings in this scan. This does not guarantee that the endpoint is risk-free.</p></div></div>}
+          {related.length ? related.map((finding) => {
+            const review = getReview(finding.id);
+            return <article className="detail-finding" key={finding.id}>
+              <div className="detail-finding-head"><div><SeverityBadge severity={finding.severity} /><span className="muted small mono">{finding.id}</span></div><span className={`review-status review-status-${review.status.toLowerCase().replaceAll(" ", "-")}`}><span />{review.status}</span></div>
+              <h3>{finding.title}</h3><p>{finding.description || "Explanation not available from the backend."}</p>
+              <div className="finding-source"><span>{finding.filePath || "File path not available"}:{finding.lineNumber ?? finding.line ?? "—"}</span><span>Detection: {finding.source || "Not available"}</span><span>{finding.confidence || "Confidence not available"}</span></div>
+              <div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.remediation || finding.mitigation || "Not available from the backend."}</p></div>{(finding.remediation || finding.mitigation) && <button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === finding.id ? "Copied" : "Copy fix"}</button>}</div>
+              {review.isFlagged && <div className="endpoint-flag-note"><AlertTriangle size={14} /><span>Flagged for human review · {review.flagReason || finding.description || "Reason not available."} No source code was changed.</span></div>}
+              <div className="endpoint-review-actions">
+                {review.isFlagged
+                  ? <button className="text-button" onClick={() => removeFlag(finding.id)}>Remove flag</button>
+                  : <button className="text-button flag-action" onClick={() => updateReview(finding.id, "Flagged for Removal", finding.description || "")}><AlertTriangle size={13} />Flag for Removal</button>}
+                <button className="text-button" onClick={() => updateReview(finding.id, "Reviewed")}>Mark Reviewed</button>
+                <button className="text-button" onClick={() => updateReview(finding.id, "Resolved")}>Mark Resolved</button>
+              </div>
+            </article>;
+          }) : <div className="no-findings"><span><Check size={17} /></span><div><strong>No scanner findings linked</strong><p>This route has no associated findings in this scan. This does not guarantee that the endpoint is risk-free.</p></div></div>}
         </section>
       </div>
       <aside className="inspection-aside">

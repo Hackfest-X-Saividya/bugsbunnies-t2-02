@@ -18,8 +18,10 @@ export function DemoNotice({ children = "Demo data · Results shown are illustra
 }
 
 export function SeverityBadge({ severity }) {
-  const key = severity?.toLowerCase() || "low";
-  return <span className={`severity-badge severity-${key}`}><span />{severity || "Info"}</span>;
+  const label = severity || "Not available";
+  const normalized = label.toLowerCase();
+  const key = ["high", "medium", "low"].includes(normalized) ? normalized : "unknown";
+  return <span className={`severity-badge severity-${key}`}><span />{label}</span>;
 }
 
 export function MethodBadge({ method }) {

@@ -18,8 +18,12 @@ To enable backend integration, copy `.env.example` to `.env`, set `VITE_API_BASE
 - Responsive landing page and workspace navigation
 - Security dashboard with vulnerability and endpoint documentation charts
 - ZIP upload validation (50 MB maximum) and sample project demos
+- Simulated demo scan progress; demo uploads are never sent or analyzed
 - Searchable API explorer and endpoint risk inspection with finding excerpts
+- Finding inspection, review statuses, flagged-code filters, and CSV/JSON review exports
 - Scan history and workspace integration settings
 - Printable report and downloadable CSV export
 
 All included scan results and source excerpts are fictional demonstration data. The browser does not execute uploaded source code.
+
+Single-file `.py` uploads remain disabled until the backend contract explicitly confirms support. Review flags are frontend-only recommendations: they never delete or edit source files.
