@@ -9,7 +9,7 @@ export function validateProjectFile(file) {
     return "Choose a ZIP archive containing your Python or FastAPI project.";
   }
   if (file.size > MAX_FILE_SIZE) {
-    return "This file exceeds the 50 MB limit. Choose a smaller ZIP archive.";
+    return "The file exceeds the 50 MB limit. Please upload a smaller file.";
   }
   return "";
 }
