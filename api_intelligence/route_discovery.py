@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
@@ -46,6 +46,12 @@ def _relative_path(path: Path, root: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.name
+
+
+def _normalize_source_path(path: str) -> str:
+    if not path:
+        return ""
+    return PurePosixPath(path.replace("\\", "/")).as_posix()
 
 
 def _read_tree(root: Path) -> tuple[list[tuple[Path, str]], list[dict[str, Any]]]:
@@ -97,9 +103,20 @@ def _dependency_expressions(value: ast.expr | None) -> list[ast.expr]:
     return [value]
 
 
-def _instance_dependencies(tree: ast.Module) -> tuple[dict[str, list[ast.expr]], dict[str, list[ast.expr]]]:
+def _instance_dependencies(
+    tree: ast.Module,
+) -> tuple[
+    dict[str, list[ast.expr]],
+    dict[str, list[ast.expr]],
+    set[str],
+    set[str],
+    set[str],
+]:
     instances: dict[str, list[ast.expr]] = {}
     included: dict[str, list[ast.expr]] = {}
+    included_routers: set[str] = set()
+    routers: set[str] = set()
+    unknown_included: set[str] = set()
 
     for node in ast.walk(tree):
         assigned_name: str | None = None
@@ -116,8 +133,9 @@ def _instance_dependencies(tree: ast.Module) -> tuple[dict[str, list[ast.expr]],
             factory = value.func
             if isinstance(factory, ast.Name) and factory.id in {"FastAPI", "APIRouter"}:
                 dependencies = _keyword(value, "dependencies")
-                if dependencies is not None:
-                    instances[assigned_name] = _dependency_expressions(dependencies)
+                instances[assigned_name] = _dependency_expressions(dependencies)
+                if factory.id == "APIRouter":
+                    routers.add(assigned_name)
 
     for node in ast.walk(tree):
         if (
@@ -127,6 +145,7 @@ def _instance_dependencies(tree: ast.Module) -> tuple[dict[str, list[ast.expr]],
             and node.args
             and isinstance(node.args[0], ast.Name)
         ):
+            included_routers.add(node.args[0].id)
             application_name = (
                 node.func.value.id if isinstance(node.func.value, ast.Name) else None
             )
@@ -139,7 +158,11 @@ def _instance_dependencies(tree: ast.Module) -> tuple[dict[str, list[ast.expr]],
                 included.setdefault(node.args[0].id, []).extend(
                     instances.get(application_name, [])
                 )
-    return instances, included
+                if application_name not in instances or application_name in routers:
+                    unknown_included.add(node.args[0].id)
+            else:
+                unknown_included.add(node.args[0].id)
+    return instances, included, routers, included_routers, unknown_included
 
 
 def _names(expression: ast.AST) -> set[str]:
@@ -188,9 +211,15 @@ def _route_methods(call: ast.Call, decorator_name: str) -> list[str] | None:
         return ["GET"]
     if not isinstance(methods, (ast.List, ast.Tuple, ast.Set)):
         return None
-    if any(not isinstance(item, ast.Constant) or not isinstance(item.value, str) for item in methods.elts):
+    if any(
+        not isinstance(item, ast.Constant)
+        or not isinstance(item.value, str)
+        or item.value.upper() not in HTTP_METHODS
+        for item in methods.elts
+    ):
         return None
-    return [item.value.upper() for item in methods.elts if item.value.upper() in HTTP_METHODS]
+    normalized = [item.value.upper() for item in methods.elts]
+    return normalized or None
 
 
 def _route_decorators(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[ast.Call, str]]:
@@ -207,8 +236,13 @@ def _route_decorators(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[
 def _handler_dependencies(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.expr]:
     dependencies: list[ast.expr] = []
     for default in function.args.defaults + function.args.kw_defaults:
-        if default is not None:
+        if default is not None and _has_dependency(default):
             dependencies.append(default)
+    for argument in (
+        function.args.posonlyargs + function.args.args + function.args.kwonlyargs
+    ):
+        if argument.annotation is not None and _has_dependency(argument.annotation):
+            dependencies.append(argument.annotation)
     for decorator in function.decorator_list:
         if isinstance(decorator, ast.Call):
             dependencies.extend(_dependency_expressions(_keyword(decorator, "dependencies")))
@@ -220,7 +254,13 @@ def _parse_routes(
     relative_file: str,
     authentication_signal: bool,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    instances, included_dependencies = _instance_dependencies(tree)
+    (
+        instances,
+        included_dependencies,
+        routers,
+        included_routers,
+        unknown_included,
+    ) = _instance_dependencies(tree)
     routes: list[dict[str, Any]] = []
     limitations: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str]] = set()
@@ -239,11 +279,30 @@ def _parse_routes(
             and isinstance(decorator.func.value, ast.Name)
         }
         dependencies = _handler_dependencies(node)
+        unknown_receiver = not receiver_names
         for receiver in receiver_names:
             dependencies.extend(instances.get(receiver, []))
             dependencies.extend(included_dependencies.get(receiver, []))
+            if receiver not in instances:
+                unknown_receiver = True
 
         signals = [_authentication_signal(dependencies)] if authentication_signal else []
+        if (
+            authentication_signal
+            and unknown_receiver
+            and signals[0] != "authentication_dependency_detected_statically"
+        ):
+            signals.append("inherited_authentication_configuration_unknown")
+        if (
+            authentication_signal
+            and (
+                receiver_names.intersection(routers).difference(included_routers)
+                or receiver_names.intersection(unknown_included)
+            )
+            and signals[0] != "authentication_dependency_detected_statically"
+            and "inherited_authentication_configuration_unknown" not in signals
+        ):
+            signals.append("inherited_authentication_configuration_unknown")
         end_line = getattr(node, "end_lineno", node.lineno)
         start_line = min([node.lineno] + [decorator.lineno for decorator, _ in decorators])
 
@@ -337,11 +396,12 @@ def correlate_findings(
     ]
     indexes_by_file: dict[str, list[int]] = {}
     for index, route in enumerate(correlated_routes):
-        indexes_by_file.setdefault(str(route.get("file", "")), []).append(index)
+        route_path = _normalize_source_path(str(route.get("file", "")))
+        indexes_by_file.setdefault(route_path, []).append(index)
 
     unmatched: list[dict[str, Any]] = []
     for finding in findings:
-        finding_path = str(finding.get("path", "")).replace("\\", "/")
+        finding_path = _normalize_source_path(str(finding.get("path", "")))
         line = finding.get("line")
         explicit_handler = next(
             (
@@ -372,7 +432,12 @@ def correlate_findings(
             if finding_path or len(explicit_matches) == 1:
                 matches = explicit_matches
 
-        if not matches and finding_path and len(indexes_by_file.get(finding_path, [])) == 1:
+        if (
+            not matches
+            and not isinstance(line, int)
+            and finding_path
+            and len(indexes_by_file.get(finding_path, [])) == 1
+        ):
             matches = [(indexes_by_file[finding_path][0], "file_only")]
 
         if not matches:

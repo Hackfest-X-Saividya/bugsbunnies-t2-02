@@ -42,7 +42,7 @@ class RouteDiscoveryTests(unittest.TestCase):
             ("GET", "/items"),
             ("POST", "/items"),
         ])
-        self.assertEqual([route["line"] for route in routes], [3, 6])
+        self.assertEqual([route["line"] for route in routes], [3, 7])
         self.assertEqual([route["handler"] for route in routes], ["list_items", "create_item"])
         self.assertEqual(routes[0]["file"], "app.py")
 
@@ -63,6 +63,30 @@ class RouteDiscoveryTests(unittest.TestCase):
             [("GET", "/multi"), ("POST", "/multi"), ("GET", "/same"), ("HEAD", "/same")],
         )
         self.assertEqual([route["line"] for route in routes[2:]], [6, 7])
+
+    def test_discovers_all_supported_method_decorators_and_keyword_path(self):
+        routes = self.routes(
+            "app = FastAPI()\n"
+            "@app.put(path='/put')\ndef put(): pass\n"
+            "@app.patch('/patch')\ndef patch(): pass\n"
+            "@app.delete('/delete')\ndef delete(): pass\n"
+            "@app.options('/options')\ndef options(): pass\n"
+            "@app.head('/head')\ndef head(): pass\n"
+            "@app.api_route(path='/custom', methods=['OPTIONS', 'HEAD'])\n"
+            "def custom(): pass\n"
+        )
+        self.assertEqual(
+            [(route["method"], route["path"]) for route in routes],
+            [
+                ("PUT", "/put"),
+                ("PATCH", "/patch"),
+                ("DELETE", "/delete"),
+                ("OPTIONS", "/options"),
+                ("HEAD", "/head"),
+                ("HEAD", "/custom"),
+                ("OPTIONS", "/custom"),
+            ],
+        )
 
     def test_discovers_apirouter_and_deduplicates_exact_records(self):
         routes = self.routes(
@@ -99,6 +123,16 @@ class RouteDiscoveryTests(unittest.TestCase):
         result = discover_routes(self.root)
         self.assertEqual(result["routes"], [])
         self.assertEqual(len(result["limitations"]), 1)
+
+    def test_invalid_api_route_methods_are_reported_as_limitation(self):
+        self.write(
+            "app.py",
+            "@app.api_route('/empty', methods=[])\ndef empty(): pass\n"
+            "@app.api_route('/invalid', methods=['TRACE'])\ndef invalid(): pass\n",
+        )
+        result = discover_routes(self.root)
+        self.assertEqual(result["routes"], [])
+        self.assertEqual(len(result["limitations"]), 2)
 
     def test_authentication_signals_include_handler_and_router_dependencies(self):
         routes = self.routes(
@@ -140,11 +174,37 @@ class RouteDiscoveryTests(unittest.TestCase):
             "@app.get('/unknown')\n"
             "def unknown(value=Depends(load_context)): pass\n"
             "@app.get('/none')\n"
-            "def none(): pass\n"
+            "def none(limit=10): pass\n"
         )
         signals = {route["path"]: route["security_signals"][0] for route in routes}
         self.assertEqual(signals["/unknown"], "authentication_dependency_behavior_unknown")
         self.assertEqual(signals["/none"], "authentication_not_detected_statically")
+
+    def test_detects_annotated_security_dependency(self):
+        routes = self.routes(
+            "from typing import Annotated\n"
+            "from fastapi import Depends, FastAPI\n"
+            "app = FastAPI()\n"
+            "@app.get('/annotated')\n"
+            "def annotated(user: Annotated[User, Depends(require_auth)]): pass\n"
+        )
+        self.assertEqual(
+            routes[0]["security_signals"],
+            ["authentication_dependency_detected_statically"],
+        )
+
+    def test_reports_unknown_inherited_router_configuration(self):
+        routes = self.routes(
+            "router = APIRouter()\n"
+            "@router.get('/unknown-inherited')\ndef route(): pass\n"
+        )
+        self.assertEqual(
+            routes[0]["security_signals"],
+            [
+                "authentication_not_detected_statically",
+                "inherited_authentication_configuration_unknown",
+            ],
+        )
 
     def test_correlates_range_file_only_and_unmatched_findings(self):
         routes = [
@@ -189,6 +249,19 @@ class RouteDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["unmatched_findings"], [outside, unmatched])
         self.assertEqual(result["routes"][0]["findings"][0]["finding"], original)
         self.assertEqual(routes[0]["findings"], [])
+
+    def test_does_not_file_associate_finding_with_known_outside_line(self):
+        route = {
+            "handler": "only",
+            "file": "only.py",
+            "handler_range": {"start_line": 1, "end_line": 4},
+            "findings": [],
+            "security_signals": [],
+        }
+        finding = {"path": "./only.py", "line": 10}
+        result = correlate_findings([route], [finding])
+        self.assertEqual(result["routes"][0]["findings"], [])
+        self.assertEqual(result["unmatched_findings"], [finding])
 
     def test_deduplicates_repeated_finding_associations(self):
         route = {
