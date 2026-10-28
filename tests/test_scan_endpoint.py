@@ -1,11 +1,13 @@
 import io
 import json
+import tempfile
 import unittest
 import zipfile
+from pathlib import Path
 from unittest.mock import patch
 from wsgiref.util import setup_testing_defaults
 
-from api_intelligence.http_api import ENDPOINT_PATH, application
+from api_intelligence.http_api import ENDPOINT_PATH, RequestError, _extract_archive, application
 
 
 class ScanEndpointTests(unittest.TestCase):
@@ -117,6 +119,45 @@ class ScanEndpointTests(unittest.TestCase):
 
         self.assertEqual(result["status"].split()[0], "422")
         self.assertEqual(result["body"]["error"]["kind"], "invalid_zip")
+
+    def test_rejects_non_zip_file_named_zip(self):
+        result = self.request(
+            [("source_zip", "renamed.zip", b"plain text, not a ZIP", "application/zip")]
+        )
+
+        self.assertEqual(result["status"].split()[0], "422")
+        self.assertEqual(result["body"]["error"]["kind"], "invalid_zip")
+
+    def test_rejects_corrupted_zip_before_extracting_files(self):
+        source_zip = bytearray(self.zip_bytes({"app.py": "print('valid data')\n"}))
+        with zipfile.ZipFile(io.BytesIO(source_zip)) as archive:
+            entry = archive.getinfo("app.py")
+        filename_length = int.from_bytes(
+            source_zip[entry.header_offset + 26 : entry.header_offset + 28],
+            "little",
+        )
+        extra_length = int.from_bytes(
+            source_zip[entry.header_offset + 28 : entry.header_offset + 30],
+            "little",
+        )
+        data_offset = entry.header_offset + 30 + filename_length + extra_length
+        source_zip[data_offset] ^= 0xFF
+
+        with tempfile.TemporaryDirectory() as directory:
+            extraction_root = Path(directory)
+            with self.assertRaises(RequestError) as raised:
+                _extract_archive(bytes(source_zip), extraction_root)
+            self.assertEqual(raised.exception.kind, "invalid_zip")
+            self.assertEqual(list(extraction_root.iterdir()), [])
+
+        with patch("api_intelligence.http_api.analyze_project") as analyze_project:
+            result = self.request(
+                [("source_zip", "project.zip", bytes(source_zip), "application/zip")]
+            )
+
+        self.assertEqual(result["status"].split()[0], "422")
+        self.assertEqual(result["body"]["error"]["kind"], "invalid_zip")
+        analyze_project.assert_not_called()
 
     def test_rejects_unsafe_zip_paths(self):
         for unsafe_path in ("../outside.py", "..\\outside.py", "./outside.py", "C:\\outside.py"):

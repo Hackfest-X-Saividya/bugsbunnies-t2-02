@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, MethodBadge, PageHeader, SeverityBadge } from "../components/Primitives.jsx";
+import { DemoNotice, FindingRating, MethodBadge, PageHeader } from "../components/Primitives.jsx";
 import CodeViewer from "../components/CodeViewer.jsx";
 import { explainFinding } from "../services/api.js";
 
@@ -25,8 +25,8 @@ export default function EndpointDetails() {
   const remediation = related[0]?.mitigation || "No scanner finding is associated with this route. Review authentication, authorization, input validation, and error handling as part of your normal security review.";
   const copyFix = async (finding) => {
     try {
-      await navigator.clipboard.writeText(finding?.mitigation || remediation);
-      setCopied(finding?.id || "all");
+      await navigator.clipboard.writeText(finding?.mitigation || finding?.remediation || remediation);
+      setCopied(finding?.id || finding?.rule_id || "all");
       window.setTimeout(() => setCopied(""), 1600);
     } catch (error) {
       setExplainError(`Could not copy to clipboard: ${error.message}`);
@@ -53,11 +53,12 @@ export default function EndpointDetails() {
   return <div className="page-content">
     <Link className="back-link" to="/explorer"><ArrowLeft size={15} /> Back to API Explorer</Link>
     {scan.isDemo && <DemoNotice />}
+    {!scan.isDemo && scan.securityFindingsAvailable === false && <DemoNotice>The backend returned route inventory only and did not provide source-code vulnerability findings.</DemoNotice>}
     <div className="endpoint-title panel">
       <div className="endpoint-title-main"><div className="endpoint-symbol"><FileCode2 size={20} /></div><div><div className="eyebrow">ENDPOINT RISK X-RAY <span className="endpoint-id">· {endpoint.id}</span></div><div className="endpoint-heading"><MethodBadge method={endpoint.method} /><h1>{endpoint.path}</h1></div><p>{endpoint.summary}</p></div></div>
-      <div className={`doc-status ${endpoint.documented ? "doc-ok" : "doc-missing"}`}><span />{endpoint.documented ? "Documented" : "Documentation mismatch"}</div>
+      <div className={`doc-status ${endpoint.documented === true ? "doc-ok" : endpoint.documented === false ? "doc-missing" : ""}`}><span />{endpoint.documented === true ? "Documented" : endpoint.documented === false ? "Undocumented" : "Not compared"}</div>
     </div>
-    {!endpoint.documented && <div className="mismatch-callout"><div className="callout-icon"><ShieldAlert size={17} /></div><div><strong>Undocumented route — documentation mismatch</strong><span>This is a documentation gap and is not, by itself, a confirmed vulnerability.</span></div></div>}
+    {endpoint.documented === false && <div className="mismatch-callout"><div className="callout-icon"><ShieldAlert size={17} /></div><div><strong>Undocumented route — documentation mismatch</strong><span>This is a documentation gap and is not, by itself, a confirmed vulnerability.</span></div></div>}
     <div className="endpoint-meta-grid">
       <div className="meta-card"><span>Source location</span><strong className="mono">{endpoint.filePath}:{endpoint.line}</strong></div>
       <div className="meta-card"><span>Related findings</span><strong>{related.length} <small>{related.length === 1 ? "potential signal" : "potential signals"}</small></strong></div>
@@ -70,10 +71,11 @@ export default function EndpointDetails() {
           {related.length ? related.map((finding) => {
             const review = getReview(finding.id);
             return <article className="detail-finding" key={finding.id}>
-              <div className="detail-finding-head"><div><SeverityBadge severity={finding.severity} /><span className="muted small mono">{finding.id}</span></div><span className={`review-status review-status-${review.status.toLowerCase().replaceAll(" ", "-")}`}><span />{review.status}</span></div>
-              <h3>{finding.title}</h3><p>{finding.description || "Explanation not available from the backend."}</p>
-              <div className="finding-source"><span>{finding.filePath || "File path not available"}:{finding.lineNumber ?? finding.line ?? "—"}</span><span>Detection: {finding.source || "Not available"}</span><span>{finding.confidence || "Confidence not available"}</span></div>
-              <div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.remediation || finding.mitigation || "Not available from the backend."}</p></div>{(finding.remediation || finding.mitigation) && <button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === finding.id ? "Copied" : "Copy fix"}</button>}</div>
+              <div className="detail-finding-head"><div><FindingRating finding={finding} compact /><span className="muted small mono">{finding.id || finding.rule_id}</span></div><span className={`review-status review-status-${review.status.toLowerCase().replaceAll(" ", "-")}`}><span />{review.status}</span></div>
+              <h3>{finding.title || finding.rule_id}</h3><p>{finding.impact || finding.description || "Explanation not available from the backend."}</p>
+              <div className="finding-source"><span>{finding.filePath ?? finding.file_path ?? "File path not available"}:{finding.lineNumber ?? finding.line_number ?? finding.line ?? "—"}</span><span>Detection: {finding.source || finding.rule_id || "Not available"}</span>{finding.confidence && <span>{finding.confidence}</span>}</div>
+              {(finding.evidence || finding.code) && <div className="finding-evidence"><strong>Evidence</strong><pre>{finding.evidence || finding.code}</pre></div>}
+              <div className="recommendation"><div><strong>Suggested remediation</strong><p>{finding.remediation || finding.mitigation || "Not available from the backend."}</p></div>{(finding.remediation || finding.mitigation) && <button className="text-button" onClick={() => copyFix(finding)}><Clipboard size={14} />{copied === (finding.id || finding.rule_id) ? "Copied" : "Copy fix"}</button>}</div>
               {review.isFlagged && <div className="endpoint-flag-note"><AlertTriangle size={14} /><span>Flagged for human review · {review.flagReason || finding.description || "Reason not available."} No source code was changed.</span></div>}
               <div className="endpoint-review-actions">
                 {review.isFlagged

@@ -29,6 +29,7 @@ class Finding:
     owasp_category: str | None = None
     remediation: str | None = None
     references: tuple[str, ...] = ()
+    cvss_vector: str | None = None
 
 
 @dataclass
@@ -60,6 +61,11 @@ class ScanResult:
                     "owasp_category": finding.owasp_category,
                     "remediation": finding.remediation,
                     "references": list(finding.references),
+                    **(
+                        {"cvss_vector": finding.cvss_vector}
+                        if finding.cvss_vector is not None
+                        else {}
+                    ),
                 }
                 for finding in self.findings
             ],

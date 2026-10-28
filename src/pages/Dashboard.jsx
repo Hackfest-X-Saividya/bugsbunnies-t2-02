@@ -7,19 +7,32 @@ import { DemoNotice, PageHeader, StatCard } from "../components/Primitives.jsx";
 import FindingsTable from "../components/FindingsTable.jsx";
 import FindingInspector from "../components/FindingInspector.jsx";
 import FlaggedCodePanel from "../components/FlaggedCodePanel.jsx";
+import { countFindingsBySeverity, SEVERITY_ORDER } from "../services/findingRating.js";
 
-const colors = { High: "#ef4444", Medium: "#f59e0b", Low: "#3b82f6" };
+const colors = {
+  Critical: "#dc2626",
+  High: "#ef4444",
+  Medium: "#f59e0b",
+  Low: "#3b82f6",
+  None: "#64748b",
+  Informational: "#06b6d4",
+  Unrated: "#94a3b8",
+};
 
 export default function Dashboard() {
   const { scan, getReview, updateReview, removeFlag } = useScan();
   const [query, setQuery] = useState("");
   const [selectedFinding, setSelectedFinding] = useState(null);
-  const counts = useMemo(() => ["High", "Medium", "Low"].map((severity) => ({
-    name: severity, value: scan.findings.filter((f) => f.severity === severity).length, color: colors[severity],
-  })), [scan.findings]);
+  const severityCounts = useMemo(() => countFindingsBySeverity(scan.findings), [scan.findings]);
+  const counts = SEVERITY_ORDER.map((severity) => ({
+    name: severity,
+    value: severityCounts[severity],
+    color: colors[severity],
+  }));
   const documentationData = [
-    { name: "Documented", routes: scan.endpoints.filter((e) => e.documented).length, fill: "#38bdf8" },
-    { name: "Undocumented", routes: scan.endpoints.filter((e) => !e.documented).length, fill: "#8b5cf6" },
+    { name: "Documented", routes: scan.endpoints.filter((e) => e.documented === true).length, fill: "#38bdf8" },
+    { name: "Undocumented", routes: scan.endpoints.filter((e) => e.documented === false).length, fill: "#8b5cf6" },
+    { name: "Not compared", routes: scan.endpoints.filter((e) => e.documented === null || e.documented === undefined).length, fill: "#64748b" },
   ];
   const visibleFindings = scan.findings.filter((finding) =>
     `${finding.id} ${finding.title} ${finding.filePath} ${finding.endpoint || ""}`.toLowerCase().includes(query.toLowerCase()),
@@ -36,18 +49,20 @@ export default function Dashboard() {
   return <div className="page-content">
     <PageHeader eyebrow="OVERVIEW / SECURITY POSTURE" title="Security dashboard" description={`A connected view of findings and API routes for ${scan.projectName}.`} action={<Link to="/scan" className="button button-primary"><Braces size={16} /> New scan</Link>} />
     {scan.isDemo && <DemoNotice />}
+    {!scan.isDemo && scan.securityFindingsAvailable === false && <DemoNotice>API route discovery completed, but this backend did not provide vulnerability findings. Zero findings means none were returned—not that the source is secure.</DemoNotice>}
     <div className="stats-grid">
-      <StatCard label="Total vulnerabilities" value={scan.findings.length} note="Across all severities" icon={ShieldAlert} />
-      <StatCard label="High severity" value={counts[0].value} note="Prioritize review" icon={AlertTriangle} tone="red" />
-      <StatCard label="Medium severity" value={counts[1].value} note="Review recommended" icon={Activity} tone="amber" />
-      <StatCard label="Low severity" value={counts[2].value} note="Hardening opportunities" icon={CircleCheck} tone="blue" />
+      <StatCard label="Total findings" value={scan.findings.length} note={scan.securityFindingsAvailable === false && !scan.isDemo ? "No vulnerability scanner results returned" : "Across all ratings"} icon={ShieldAlert} />
+      <StatCard label="Critical severity" value={severityCounts.Critical} note="Immediate review" icon={AlertTriangle} tone="red" />
+      <StatCard label="High severity" value={severityCounts.High} note="Prioritize review" icon={AlertTriangle} tone="red" />
+      <StatCard label="Medium severity" value={severityCounts.Medium} note="Review recommended" icon={Activity} tone="amber" />
+      <StatCard label="Low severity" value={severityCounts.Low} note="Hardening opportunities" icon={CircleCheck} tone="blue" />
       <StatCard label="API endpoints" value={endpointCount} note={`${documentationData[1].routes} documentation mismatch`} icon={Braces} tone="cyan" />
       <StatCard label="Findings needing review" value={reviewCounts.needsReview} note="Needs Review or flagged" icon={Eye} tone="amber" />
       <StatCard label="Flagged for removal" value={reviewCounts.flagged} note="Human review only" icon={AlertTriangle} tone="red" />
     </div>
     <div className="chart-grid">
       <section className="panel chart-panel">
-        <div className="panel-heading"><div><h2>Finding distribution</h2><p>Potential findings by severity</p></div><span className="panel-kicker">{scan.isDemo ? "DEMO DATA" : "LIVE SCAN"}</span></div>
+        <div className="panel-heading"><div><h2>Finding distribution</h2><p>Potential findings by severity rating</p></div><span className="panel-kicker">{scan.isDemo ? "DEMO DATA" : "LIVE SCAN"}</span></div>
         <div className="chart-inner">
           <div className="donut-wrap"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={counts} dataKey="value" nameKey="name" innerRadius={66} outerRadius={88} paddingAngle={4} stroke="none">{counts.map((entry) => <Cell key={entry.name} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ background: "#111d32", border: "1px solid #263650", borderRadius: 10, color: "#f8fafc" }} /></PieChart></ResponsiveContainer><div className="donut-center"><strong>{scan.findings.length}</strong><span>findings</span></div></div>
           <div className="chart-legend">{counts.map((item) => <div key={item.name}><span style={{ background: item.color }} />{item.name}<strong>{item.value}</strong></div>)}</div>
