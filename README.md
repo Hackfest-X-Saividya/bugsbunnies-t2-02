@@ -105,7 +105,8 @@ sets `execution_allowed` to `False` and authorizes static analysis only.
 The API accepts `.zip` archives, individual source files, and repeated
 multi-file inputs. Source extensions are Python, JavaScript/TypeScript, Java,
 Go, PHP, Ruby, C/C++, C#, Rust, Swift, Kotlin, Scala, and shell files.
-Configuration and dependency files such as JSON/YAML/TOML/XML, Dockerfile,
+Configuration, dependency, and supplemental document files such as JSON/
+YAML/TOML/XML, plain-text `.txt` fixtures, Dockerfile,
 `requirements.txt`, `pyproject.toml`, `package.json`, lockfiles, `go.mod`, and
 `Cargo.toml` may be uploaded as supplemental review inputs. They are accepted
 but are not security-analyzed by the current static analyzers.

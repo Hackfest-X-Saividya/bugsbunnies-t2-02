@@ -93,8 +93,9 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/scan `
 send one `source_file` or repeated `files` fields. Accepted source extensions
 are `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.go`, `.php`, `.rb`, `.cs`,
 `.c`, `.h`, `.cpp`, `.hpp`, `.rs`, `.swift`, `.kt`, `.kts`, `.scala`, and
-`.sh`. Supplemental configuration and dependency files such as JSON, YAML,
-TOML, XML, Dockerfile, `.env.example`, dependency manifests, and lockfiles
+`.sh`. Supplemental configuration, dependency, and plain-text document files
+such as `.txt` fixtures, JSON, YAML, TOML, XML, Dockerfile, `.env.example`,
+dependency manifests, and lockfiles
 are accepted but reported as not analyzed. Unsupported extensions, empty
 files, binary files, real `.env` files, unsafe paths, and invalid UTF-8 are
 rejected with structured errors.

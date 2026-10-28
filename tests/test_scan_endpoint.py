@@ -208,7 +208,7 @@ class ScanEndpointTests(unittest.TestCase):
 
     def test_rejects_unregistered_text_and_lock_filenames(self):
         text_file = self.request(
-            [("files", "notes.txt", b"not a manifest\n", "text/plain")],
+            [("files", "notes.md", b"not a supported document\n", "text/markdown")],
             path=ENDPOINT_PATH,
         )
         lock_file = self.request(
@@ -218,6 +218,26 @@ class ScanEndpointTests(unittest.TestCase):
 
         self.assertEqual(text_file["body"]["error"]["kind"], "unsupported_file_type")
         self.assertEqual(lock_file["body"]["error"]["kind"], "unsupported_file_type")
+
+    def test_accepts_plain_text_supplemental_file(self):
+        result = self.request(
+            [("files", "SDGRD TF3.txt", b"harmless test fixture\n", "text/plain")],
+            path=ENDPOINT_PATH,
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(result["body"]["status"], "partial")
+        self.assertEqual(result["body"]["supplemental_files"], ["SDGRD TF3.txt"])
+
+    def test_rejects_oversized_plain_text_file(self):
+        with patch("api_intelligence.http_api.MAX_SOURCE_FILE_BYTES", 4):
+            result = self.request(
+                [("files", "fixture.txt", b"12345", "text/plain")],
+                path=ENDPOINT_PATH,
+            )
+
+        self.assertEqual(result["status"].split()[0], "413")
+        self.assertEqual(result["body"]["error"]["kind"], "source_file_too_large")
 
     def test_rejects_unsupported_empty_and_binary_source_files(self):
         unsupported = self.request(

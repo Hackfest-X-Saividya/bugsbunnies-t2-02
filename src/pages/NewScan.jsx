@@ -6,9 +6,10 @@ import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
 import { isDemoMode, getScanFindings, getScanRoutes, mapScanFinding, mapScanRoute, scanStatusLabel, submitScan } from "../services/api.js";
 import { endpoints, findings } from "../data/mockData.js";
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_TOTAL_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 50;
-const ACCEPTED_SOURCE_EXTENSIONS = [".zip", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".php", ".rb", ".cs", ".c", ".h", ".cpp", ".hpp", ".rs", ".swift", ".kt", ".kts", ".scala", ".sh", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml"];
+const ACCEPTED_SOURCE_EXTENSIONS = [".zip", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".php", ".rb", ".cs", ".c", ".h", ".cpp", ".hpp", ".rs", ".swift", ".kt", ".kts", ".scala", ".sh", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml", ".txt"];
 const SUPPLEMENTAL_NAMES = ["dockerfile", "docker-compose.yml", "compose.yaml", "requirements.txt", "pyproject.toml", "pipfile", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "go.mod", "cargo.toml", ".env.example"];
 const secureEndpoints = endpoints.filter((endpoint) => endpoint.documented).map((endpoint) => ({
   ...endpoint,
@@ -64,23 +65,28 @@ export default function NewScan() {
       return;
     }
     const hasZip = candidates.some((candidate) => candidate.name.toLowerCase().endsWith(".zip"));
-    const invalid = candidates.find((candidate) => {
+    const unsupported = candidates.find((candidate) => {
       const lowerName = candidate.name.toLowerCase();
       const extension = lowerName.slice(lowerName.lastIndexOf("."));
-      return (!ACCEPTED_SOURCE_EXTENSIONS.includes(extension) && !SUPPLEMENTAL_NAMES.includes(lowerName)) ||
-        candidate.size > MAX_FILE_SIZE;
+      return !ACCEPTED_SOURCE_EXTENSIONS.includes(extension) && !SUPPLEMENTAL_NAMES.includes(lowerName);
     });
     if (hasZip && candidates.length > 1) {
       setFiles([]);
       setError("ZIP archives must be uploaded alone; choose individual source and supplemental files for a multi-file scan.");
       return;
     }
-    if (invalid) {
+    if (unsupported) {
       setFiles([]);
-      setError(`Unsupported or oversized file: ${invalid.name}.`);
+      setError(`Unsupported file type: ${unsupported.name}.`);
       return;
     }
-    if (candidates.reduce((total, candidate) => total + candidate.size, 0) > MAX_FILE_SIZE) {
+    const oversized = candidates.find((candidate) => candidate.size > MAX_FILE_SIZE);
+    if (oversized) {
+      setFiles([]);
+      setError(`File exceeds the 5 MB limit: ${oversized.name}.`);
+      return;
+    }
+    if (candidates.reduce((total, candidate) => total + candidate.size, 0) > MAX_TOTAL_SIZE) {
       setFiles([]);
       setError("The selected files exceed the 20 MB total upload limit.");
       return;

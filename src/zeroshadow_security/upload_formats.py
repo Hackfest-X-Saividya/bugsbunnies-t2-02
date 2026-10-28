@@ -12,6 +12,7 @@ SOURCE = "source"
 CONFIGURATION = "configuration"
 DEPENDENCY_MANIFEST = "dependency manifest"
 PROJECT_ARCHIVE = "project archive"
+SUPPLEMENTAL_DOCUMENT = "supplemental document"
 UNSUPPORTED = "unsupported"
 
 _CONFIGURATION_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml"}
@@ -46,6 +47,8 @@ def classify_filename(filename: str) -> str:
         return CONFIGURATION
     if lowered in _DEPENDENCY_FILENAMES:
         return DEPENDENCY_MANIFEST
+    if lowered.endswith(".txt"):
+        return SUPPLEMENTAL_DOCUMENT
     if lowered in _CONFIGURATION_FILENAMES or Path(name).suffix.lower() in _CONFIGURATION_EXTENSIONS:
         return CONFIGURATION
     if language_for_path(name) is not None:
