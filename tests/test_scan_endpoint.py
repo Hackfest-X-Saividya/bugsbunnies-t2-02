@@ -206,6 +206,19 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(accepted["body"]["status"], "partial")
         self.assertEqual(accepted["body"]["supplemental_files"], [".env.example"])
 
+    def test_rejects_unregistered_text_and_lock_filenames(self):
+        text_file = self.request(
+            [("files", "notes.txt", b"not a manifest\n", "text/plain")],
+            path=ENDPOINT_PATH,
+        )
+        lock_file = self.request(
+            [("files", "custom.lock", b"not a supported lockfile\n", "text/plain")],
+            path=ENDPOINT_PATH,
+        )
+
+        self.assertEqual(text_file["body"]["error"]["kind"], "unsupported_file_type")
+        self.assertEqual(lock_file["body"]["error"]["kind"], "unsupported_file_type")
+
     def test_rejects_unsupported_empty_and_binary_source_files(self):
         unsupported = self.request(
             [("source_file", "notes.md", b"# not source", "text/markdown")],

@@ -8,7 +8,7 @@ import { endpoints, findings } from "../data/mockData.js";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 50;
-const ACCEPTED_SOURCE_EXTENSIONS = [".zip", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".php", ".rb", ".cs", ".c", ".h", ".cpp", ".hpp", ".rs", ".swift", ".kt", ".kts", ".scala", ".sh", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml", ".txt", ".lock"];
+const ACCEPTED_SOURCE_EXTENSIONS = [".zip", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".php", ".rb", ".cs", ".c", ".h", ".cpp", ".hpp", ".rs", ".swift", ".kt", ".kts", ".scala", ".sh", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml"];
 const SUPPLEMENTAL_NAMES = ["dockerfile", "docker-compose.yml", "compose.yaml", "requirements.txt", "pyproject.toml", "pipfile", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "go.mod", "cargo.toml", ".env.example"];
 const secureEndpoints = endpoints.filter((endpoint) => endpoint.documented).map((endpoint) => ({
   ...endpoint,
