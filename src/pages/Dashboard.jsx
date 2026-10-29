@@ -23,9 +23,14 @@ export default function Dashboard() {
     `${finding.title} ${finding.filePath} ${finding.endpoint || ""}`.toLowerCase().includes(query.toLowerCase()),
   );
   const endpointCount = scan.endpoints.length;
+  const isCleanScan = !scan.isDemo && scan.status === "Complete" && scan.findings.length === 0;
+  const isPartialScan = !scan.isDemo && scan.status === "Partial";
+  const partialDetails = [...(scan.errors || []).map((error) => error.message || error.kind), ...(scan.limitations || [])].filter(Boolean);
   return <div className="page-content">
     <PageHeader eyebrow="OVERVIEW / SECURITY POSTURE" title="Security dashboard" description={`A connected view of findings and API routes for ${scan.projectName}.`} action={<Link to="/scan" className="button button-primary"><Braces size={16} /> New scan</Link>} />
     {scan.isDemo && <DemoNotice />}
+    {isCleanScan && <div className="scan-result-notice scan-result-clean" role="status"><CircleCheck size={22} /><div><strong>You're all good! No vulnerabilities detected.</strong><p>Your scan completed successfully, and no issues were detected by the available security checks.</p></div></div>}
+    {isPartialScan && <div className="scan-result-notice scan-result-partial" role="status"><AlertTriangle size={22} /><div><strong>Scan incomplete — some files could not be analyzed.</strong><p>{partialDetails[0] || "Some uploaded files were accepted as supplemental input or an analyzer was unavailable."}</p></div></div>}
     <div className="stats-grid">
       <StatCard label="Total vulnerabilities" value={scan.findings.length} note="Across all severities" icon={ShieldAlert} />
       <StatCard label="High severity" value={counts[0].value} note="Prioritize review" icon={AlertTriangle} tone="red" />

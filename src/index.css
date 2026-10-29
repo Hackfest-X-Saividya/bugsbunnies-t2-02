@@ -92,6 +92,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button-large { min-height: 45px; padding: 0 17px; font-size: 12px; }
 .demo-notice { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 18px; color: #aeb9ca; border: 1px solid #3c3972; background: linear-gradient(90deg, #28245250, #151d35); border-radius: 8px; font-size: 10px; }
 .demo-notice svg { color: #a99bff; flex: 0 0 auto; }
+.scan-result-notice { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; margin-bottom: 14px; border-radius: 10px; }
+.scan-result-notice svg { flex: 0 0 auto; margin-top: 1px; }
+.scan-result-notice strong { display: block; font-size: 13px; font-weight: 650; }
+.scan-result-notice p { margin: 5px 0 0; font-size: 10px; line-height: 1.55; }
+.scan-result-clean { color: #9af0c1; border: 1px solid #3aa87566; background: linear-gradient(90deg, #1a5b422b, #142d2a); }
+.scan-result-clean p { color: #a6cbb8; }
+.scan-result-partial { color: #f7c978; border: 1px solid #b9853f66; background: linear-gradient(90deg, #66451f2b, #2d261d); }
+.scan-result-partial p { color: #d3b88a; }
 .panel { border: 1px solid #202f47; background: linear-gradient(145deg, #111d32, #0f1a2e); border-radius: 11px; box-shadow: 0 8px 25px #0000000c; }
 .panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .panel-heading h2, .section-title-row h2 { margin: 0; color: #e4eaf3; font-size: 13px; font-weight: 610; letter-spacing: -.1px; }

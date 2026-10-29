@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, Check, FileArchive, FolderUp, LoaderCircle, Shield, Sparkles } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
 import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
-import { isDemoMode, getScanFindings, getScanRoutes, mapScanFinding, mapScanRoute, scanStatusLabel, submitScan } from "../services/api.js";
+import { isDemoMode, getScan, getScanFindings, getScanRoutes, mapScanFinding, mapScanRoute, scanStatusLabel, submitScan } from "../services/api.js";
 import { endpoints, findings } from "../data/mockData.js";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -107,17 +107,31 @@ export default function NewScan() {
       const created = await submitScan(files);
       const scanId = created?.id ?? created?.scan_id;
       if (!scanId) throw new Error("The backend did not return a scan id.");
+      if (!["completed", "partial", "failed"].includes(created.status)) {
+        throw new Error("The backend returned an unknown scan status.");
+      }
       setStatus("Collecting scan findings and discovered routes…");
-      const [realFindings, realEndpoints] = await Promise.all([getScanFindings(scanId), getScanRoutes(scanId)]);
-      if (!Array.isArray(realFindings) || !Array.isArray(realEndpoints)) {
+      const [scanDetails, realFindings, realEndpoints] = await Promise.all([getScan(scanId), getScanFindings(scanId), getScanRoutes(scanId)]);
+      if (!scanDetails || !["completed", "partial", "failed"].includes(scanDetails.status) || scanDetails.status !== created.status) {
+        throw new Error("The backend returned incomplete or inconsistent scan status data.");
+      }
+      const scanStatus = scanDetails.status;
+      if (scanStatus === "failed") {
+        throw new Error("The scan failed before results could be completed.");
+      }
+      if (!Array.isArray(realFindings) || !realFindings.every((finding) => finding && typeof finding === "object") ||
+        !Array.isArray(realEndpoints) || !realEndpoints.every((route) => route && typeof route === "object")) {
         throw new Error("The backend response must include findings and routes as arrays.");
       }
       setScan({
         id: scanId,
         projectName: files[0].name.replace(/\.[^.]+$/i, ""),
-        status: scanStatusLabel(created.status),
+        status: scanStatusLabel(scanStatus),
         findings: realFindings.map(mapScanFinding),
         endpoints: realEndpoints.map(mapScanRoute),
+        errors: Array.isArray(scanDetails?.errors) ? scanDetails.errors : [],
+        limitations: Array.isArray(scanDetails?.limitations) ? scanDetails.limitations : [],
+        summary: scanDetails?.summary ?? null,
         isDemo: false,
       });
       navigate("/dashboard");

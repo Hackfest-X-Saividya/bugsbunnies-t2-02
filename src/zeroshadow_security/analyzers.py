@@ -96,7 +96,7 @@ class AnalyzerRegistry:
 
 
 class BanditAnalyzer:
-    def __init__(self, *, executable: str = "bandit", max_files: int = 10_000, max_file_bytes: int = 5 * 1024 * 1024) -> None:
+    def __init__(self, *, executable: str | None = None, max_files: int = 10_000, max_file_bytes: int = 5 * 1024 * 1024) -> None:
         self.executable = executable
         self.max_files = max_files
         self.max_file_bytes = max_file_bytes
@@ -186,7 +186,7 @@ class SemgrepAnalyzer:
 
 def default_analyzer_registry(
     *,
-    bandit_executable: str = "bandit",
+    bandit_executable: str | None = None,
     semgrep_executable: str = "semgrep",
 ) -> AnalyzerRegistry:
     return AnalyzerRegistry(
@@ -199,7 +199,7 @@ def scan_project(
     target: str | Path,
     *,
     timeout_seconds: float = 60,
-    bandit_executable: str = "bandit",
+    bandit_executable: str | None = None,
     semgrep_executable: str = "semgrep",
     executable: str | None = None,
 ) -> ScanResult:

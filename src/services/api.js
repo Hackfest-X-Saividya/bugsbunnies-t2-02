@@ -56,9 +56,10 @@ export function mapScanRoute(route, index) {
 }
 
 export function scanStatusLabel(status) {
+  if (status === "completed") return "Complete";
   if (status === "partial") return "Partial";
   if (status === "failed") return "Failed";
-  return "Complete";
+  return "Unknown";
 }
 
 export function submitScan(files) {

@@ -7,7 +7,7 @@ Frontend for the BugsBunnies team project at HackFest 2026. ShadowGuard AI conne
 Install and start the backend and frontend in separate PowerShell terminals:
 
 ```powershell
-python -m pip install -e ".[scanner,test]"
+python -m pip install -e ".[test]"
 python -m api_intelligence.http_api
 ```
 

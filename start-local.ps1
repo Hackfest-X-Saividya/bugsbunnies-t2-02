@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $python = Join-Path $root ".venv\Scripts\python.exe"
+$env:PYTHONPATH = Join-Path $root "src"
 
 if (-not (Test-Path -LiteralPath $python)) {
     $python = (Get-Command python -ErrorAction Stop).Source

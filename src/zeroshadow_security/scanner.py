@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ def run_bandit(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_files: int = DEFAULT_MAX_FILES,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
-    executable: str = "bandit",
+    executable: str | None = None,
 ) -> ScanResult:
     started = time.monotonic()
     root = Path(target).expanduser().resolve()
@@ -51,8 +52,10 @@ def run_bandit(
     if not files:
         return ScanResult(ScanStatus.SUCCEEDED, duration_ms=_elapsed_ms(started), files_scanned=0)
 
+    # Keep the default analyzer tied to the backend interpreter, not a separate PATH entry.
+    command_prefix = [sys.executable, "-m", "bandit"] if executable is None else [executable]
     command = [
-        executable,
+        *command_prefix,
         "-r",
         str(root),
         "-f",

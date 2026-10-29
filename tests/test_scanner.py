@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 
 from zeroshadow_security import (
     Finding,
@@ -49,6 +50,7 @@ def test_findings_do_not_make_a_scan_failure(tmp_path, monkeypatch):
     assert len(result.findings) == 1
     assert "--exclude" in captured_command[0]
     assert ".venv" in captured_command[0][captured_command[0].index("--exclude") + 1]
+    assert captured_command[0][:3] == [sys.executable, "-m", "bandit"]
 
 
 def test_malformed_output_is_failure(tmp_path, monkeypatch):

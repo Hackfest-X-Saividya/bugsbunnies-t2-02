@@ -10,6 +10,9 @@ export function ScanProvider({ children }) {
     status: "Demo data",
     findings,
     endpoints,
+    errors: [],
+    limitations: [],
+    summary: null,
     isDemo: true,
   });
   const value = useMemo(() => ({ scan, setScan }), [scan]);
