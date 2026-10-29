@@ -13,14 +13,14 @@ test("accepts a nonempty ZIP file", () => {
   assert.equal(validateProjectFile({ name: "project.zip", size: 1024 }), "");
 });
 
-test("accepts a ZIP file at the 50 MB limit", () => {
-  assert.equal(validateProjectFile({ name: "project.zip", size: 50 * 1024 * 1024 }), "");
+test("accepts a ZIP file at the 19 MiB request-safe limit", () => {
+  assert.equal(validateProjectFile({ name: "project.zip", size: 19 * 1024 * 1024 }), "");
 });
 
-test("rejects a ZIP file larger than 50 MB", () => {
+test("rejects a ZIP file larger than the 19 MiB request-safe limit", () => {
   assert.equal(
-    validateProjectFile({ name: "project.zip", size: 50 * 1024 * 1024 + 1 }),
-    "The file exceeds the 50 MB limit. Please upload a smaller file.",
+    validateProjectFile({ name: "project.zip", size: 19 * 1024 * 1024 + 1 }),
+    "The file exceeds the 19 MiB limit. Please upload a smaller file.",
   );
 });
 

@@ -1,23 +1,55 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { findings, endpoints, demoProjectName } from "../data/mockData.js";
+import {
+  addLiveScan,
+  readScanHistory,
+  selectLiveScan,
+  writeScanHistory,
+} from "../services/scanHistory.js";
 
 const ScanContext = createContext(null);
 const INITIAL_REVIEW = { status: "Needs Review", isFlagged: false, flagReason: "" };
+const initialDemoScan = {
+  id: "demo-scan-01",
+  projectName: demoProjectName,
+  status: "Demo data",
+  findings,
+  endpoints,
+  isDemo: true,
+};
 
 export function ScanProvider({ children }) {
-  const [scan, setScanState] = useState({
-    id: "demo-scan-01",
-    projectName: demoProjectName,
-    status: "Demo data",
-    findings,
-    endpoints,
-    isDemo: true,
-  });
+  const [history, setHistory] = useState(() => readScanHistory());
+  const [storageError, setStorageError] = useState(history.error);
+  const [demoScan, setDemoScan] = useState(null);
   const [review, setReview] = useState({});
+  const selectedLiveScan = history.scans.find((item) => item.id === history.selectedScanId);
+  const scan = demoScan ?? selectedLiveScan ?? initialDemoScan;
+
+  useEffect(() => {
+    if (!history.scans.length) return;
+    setStorageError(writeScanHistory(undefined, history));
+  }, [history]);
+
   const setScan = useCallback((nextScan) => {
-    setScanState(nextScan);
     setReview({});
+    if (nextScan.isDemo === true) {
+      setDemoScan(nextScan);
+      return;
+    }
+    setDemoScan(null);
+    setHistory((current) => addLiveScan(current, {
+      ...nextScan,
+      completedAt: nextScan.completedAt || new Date().toISOString(),
+      isDemo: false,
+    }));
   }, []);
+  const selectScan = useCallback((scanId) => {
+    if (!history.scans.some((item) => item.id === scanId)) return;
+    setHistory((current) => selectLiveScan(current, scanId));
+    setDemoScan(null);
+    setReview({});
+  }, [history.scans]);
   const getReview = useCallback((findingId) => review[findingId] || INITIAL_REVIEW, [review]);
   const updateReview = useCallback((findingId, status, flagReason = "") => {
     setReview((current) => {
@@ -47,8 +79,16 @@ export function ScanProvider({ children }) {
     });
   }, []);
   const value = useMemo(() => ({
-    scan, setScan, getReview, updateReview, removeFlag,
-  }), [scan, setScan, getReview, updateReview, removeFlag]);
+    scan,
+    scans: history.scans,
+    selectedScanId: scan.isDemo ? null : history.selectedScanId,
+    storageError,
+    setScan,
+    selectScan,
+    getReview,
+    updateReview,
+    removeFlag,
+  }), [scan, history, storageError, setScan, selectScan, getReview, updateReview, removeFlag]);
   return <ScanContext.Provider value={value}>{children}</ScanContext.Provider>;
 }
 

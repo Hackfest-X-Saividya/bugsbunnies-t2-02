@@ -1,5 +1,7 @@
 import io
 import json
+import shutil
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -8,6 +10,7 @@ from unittest.mock import patch
 from wsgiref.util import setup_testing_defaults
 
 from api_intelligence.http_api import ENDPOINT_PATH, RequestError, _extract_archive, application
+from src.zeroshadow_security.models import ScanResult, ScanStatus, ScannerError
 
 
 class ScanEndpointTests(unittest.TestCase):
@@ -38,7 +41,16 @@ class ScanEndpointTests(unittest.TestCase):
         parts.append(f"--{self.boundary}--\r\n".encode())
         return b"".join(parts)
 
-    def request(self, fields, body=None, method="POST", path=ENDPOINT_PATH):
+    def request(
+        self,
+        fields,
+        body=None,
+        method="POST",
+        path=ENDPOINT_PATH,
+        origin=None,
+        requested_method=None,
+        requested_headers=None,
+    ):
         request_body = body if body is not None else self.multipart_body(fields)
         environ = {}
         setup_testing_defaults(environ)
@@ -51,9 +63,15 @@ class ScanEndpointTests(unittest.TestCase):
                 "wsgi.input": io.BytesIO(request_body),
             }
         )
+        if origin:
+            environ["HTTP_ORIGIN"] = origin
+        if requested_method:
+            environ["HTTP_ACCESS_CONTROL_REQUEST_METHOD"] = requested_method
+        if requested_headers:
+            environ["HTTP_ACCESS_CONTROL_REQUEST_HEADERS"] = requested_headers
         captured = {}
 
-        def start_response(status, headers):
+        def start_response(status, headers, exc_info=None):
             captured["status"] = status
             captured["headers"] = dict(headers)
 
@@ -80,12 +98,125 @@ class ScanEndpointTests(unittest.TestCase):
         self.assertEqual(result["status"], "200 OK")
         self.assertEqual(result["body"]["status"], "completed")
         self.assertEqual(result["body"]["summary"]["routes_discovered"], 1)
-        self.assertFalse(result["body"]["summary"]["security_findings_available"])
+        self.assertIsInstance(
+            result["body"]["summary"]["security_findings_available"],
+            bool,
+        )
         self.assertEqual(result["body"]["routes"][0]["path"], "/items")
         self.assertEqual(result["body"]["routes"][0]["findings"], [])
+        self.assertEqual(result["body"]["security_findings"], [])
         self.assertEqual(result["body"]["unmatched_findings"], [])
         self.assertIsNone(result["body"]["openapi_comparison"])
         self.assertEqual(result["body"]["errors"], [])
+
+    def test_returns_bandit_findings_and_correlates_them_to_routes(self):
+        executable = Path(sys.prefix) / "bin" / "bandit"
+        if not executable.is_file() and not shutil.which("bandit"):
+            self.skipTest("Bandit is not installed in this Python environment")
+
+        sample_path = Path(__file__).parent / "fixtures" / "bandit_sample" / "app.py"
+        source_zip = self.zip_bytes({"app.py": sample_path.read_text(encoding="utf-8")})
+        result = self.request(
+            [("source_zip", "project.zip", source_zip, "application/zip")]
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        body = result["body"]
+        self.assertTrue(body["summary"]["security_findings_available"])
+        self.assertEqual(body["summary"]["security_findings"], 1)
+        finding = body["security_findings"][0]
+        self.assertEqual(finding["rule_id"], "B307")
+        self.assertEqual(finding["severity"], "medium")
+        self.assertIn("possibly insecure function", finding["description"])
+        self.assertEqual(finding["file_path"], "app.py")
+        self.assertEqual(finding["line"], 8)
+        self.assertIn("eval(", finding["evidence"])
+        self.assertEqual(body["routes"][0]["path"], "/unsafe")
+        self.assertEqual(
+            body["routes"][0]["findings"][0]["finding"]["id"],
+            finding["id"],
+        )
+        self.assertEqual(body["unmatched_findings"], [])
+        self.assertEqual(body["security_scan_errors"], [])
+
+    def test_reports_scanner_failure_without_claiming_findings_are_available(self):
+        source_zip = self.zip_bytes({"app.py": "pass\n"})
+        failed_result = ScanResult(
+            ScanStatus.FAILED,
+            errors=[
+                ScannerError(
+                    "Bandit executable was not found",
+                    "missing_executable",
+                    "/private/path/to/environment",
+                )
+            ],
+        )
+        with patch(
+            "api_intelligence.http_api.SecurityIntelligenceService.scan",
+            return_value=failed_result,
+        ):
+            result = self.request(
+                [("source_zip", "project.zip", source_zip, "application/zip")]
+            )
+
+        body = result["body"]
+        self.assertEqual(result["status"], "200 OK")
+        self.assertFalse(body["summary"]["security_findings_available"])
+        self.assertEqual(body["security_findings"], [])
+        self.assertEqual(
+            body["security_scan_errors"],
+            [
+                {
+                    "code": "missing_executable",
+                    "message": "Bandit executable was not found",
+                    "stage": "security_scan",
+                }
+            ],
+        )
+        self.assertNotIn("/private/path", json.dumps(body))
+
+    def test_preflight_allows_local_frontend_origin(self):
+        result = self.request(
+            [],
+            body=b"",
+            method="OPTIONS",
+            origin="http://localhost:5173",
+            requested_method="POST",
+            requested_headers="content-type",
+        )
+
+        self.assertEqual(result["status"], "204 No Content")
+        self.assertEqual(
+            result["headers"]["Access-Control-Allow-Origin"],
+            "http://localhost:5173",
+        )
+        self.assertEqual(result["headers"]["Access-Control-Allow-Methods"], "POST, OPTIONS")
+        self.assertEqual(result["headers"]["Access-Control-Allow-Headers"], "Content-Type")
+
+    def test_scan_response_allows_local_frontend_origin(self):
+        source_zip = self.zip_bytes({"app.py": "pass\n"})
+        result = self.request(
+            [("source_zip", "project.zip", source_zip, "application/zip")],
+            origin="http://127.0.0.1:5173",
+        )
+
+        self.assertEqual(result["status"], "200 OK")
+        self.assertEqual(
+            result["headers"]["Access-Control-Allow-Origin"],
+            "http://127.0.0.1:5173",
+        )
+
+    def test_preflight_rejects_untrusted_origin(self):
+        result = self.request(
+            [],
+            body=b"",
+            method="OPTIONS",
+            origin="https://attacker.example",
+            requested_method="POST",
+        )
+
+        self.assertEqual(result["status"], "403 Forbidden")
+        self.assertNotIn("Access-Control-Allow-Origin", result["headers"])
 
     def test_accepts_optional_openapi_json(self):
         source_zip = self.zip_bytes(
@@ -189,7 +320,7 @@ class ScanEndpointTests(unittest.TestCase):
         result = self.request([], method="GET")
 
         self.assertEqual(result["status"], "405 Method Not Allowed")
-        self.assertEqual(result["headers"]["Allow"], "POST")
+        self.assertEqual(result["headers"]["Allow"], "POST, OPTIONS")
         self.assertEqual(result["body"]["error"]["kind"], "method_not_allowed")
 
     def test_rejects_oversized_request_body(self):

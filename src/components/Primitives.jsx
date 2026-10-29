@@ -18,6 +18,10 @@ export function DemoNotice({ children = "Demo data · Results shown are illustra
   return <div className="demo-notice"><Info size={15} /><span>{children}</span></div>;
 }
 
+export function ScanStatusNotice({ children }) {
+  return <div className="live-scan-notice" role="status"><Info size={15} /><span>{children}</span></div>;
+}
+
 export function SeverityBadge({ severity }) {
   const label = severity || "Unrated";
   const normalized = label.toLowerCase();

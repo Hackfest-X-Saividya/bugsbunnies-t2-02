@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, Check, CheckCircle2, Circle, FileArchive, FolderUp, LoaderCircle, Shield, Sparkles } from "lucide-react";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, PageHeader } from "../components/Primitives.jsx";
-import { isDemoMode, getScanFindings, getScanRoutes, normalizeFindings, submitScan } from "../services/api.js";
+import { PageHeader, ScanStatusNotice } from "../components/Primitives.jsx";
+import { isDemoMode, submitScan } from "../services/api.js";
 import { validateProjectFile } from "../services/projectFileValidation.js";
 import { endpoints, findings } from "../data/mockData.js";
 
@@ -98,20 +98,18 @@ export default function NewScan() {
     setError("");
     setProgress({ mode: "live", state: "uploading", activeIndex: 0 });
     try {
-      const created = await submitScan(file);
-      const scanId = created?.id ?? created?.scan_id;
-      if (!scanId) throw new Error("The backend did not return a scan id.");
-      setProgress({ mode: "live", state: "waiting", activeIndex: -1 });
-      const [rawFindings, realEndpoints] = await Promise.all([getScanFindings(scanId), getScanRoutes(scanId)]);
-      if (!Array.isArray(rawFindings) || !Array.isArray(realEndpoints)) {
-        throw new Error("The backend response must include findings and routes as arrays.");
-      }
+      const result = await submitScan(file);
       setScan({
-        id: scanId,
+        id: result.id,
         projectName: file.name.replace(/\.zip$/i, ""),
-        status: "Complete",
-        findings: normalizeFindings(rawFindings),
-        endpoints: realEndpoints,
+        status: result.securityFindingsAvailable
+          ? "Complete · Security and API analysis"
+          : "Complete · API route discovery (security scanner unavailable)",
+        findings: result.findings,
+        endpoints: result.endpoints,
+        securityFindingsAvailable: result.securityFindingsAvailable,
+        backendErrors: result.backendErrors,
+        limitations: result.limitations,
         isDemo: false,
       });
       navigate("/dashboard");
@@ -173,7 +171,7 @@ export default function NewScan() {
 
   return <div className="page-content">
     <PageHeader eyebrow="WORKSPACE / NEW ANALYSIS" title="Upload your project" description="Analyze a Python project and connect code-level signals to your API surface." />
-    {isDemoMode && <DemoNotice>Demo mode · Progress is simulated. Sample results are predefined; uploaded files stay on this device and are never analyzed.</DemoNotice>}
+    {isDemoMode && <ScanStatusNotice>Demo mode · Progress is simulated. Sample results are predefined; uploaded files stay on this device and are never analyzed.</ScanStatusNotice>}
     <div className="scan-layout">
       <section className="panel upload-panel">
         <div className="section-title-row"><div><h2>Project archive</h2><p>Choose a ZIP archive containing Python or FastAPI source code.</p></div><span className="step-count">STEP 01 <ArrowRight size={13} /> 02</span></div>
@@ -182,8 +180,8 @@ export default function NewScan() {
           onDragLeave={() => setDragging(false)}
           onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files?.[0]); }}>
           <input ref={fileInput} className="sr-only" type="file" accept=".zip,application/zip" aria-label="Choose a ZIP project archive" onChange={(event) => acceptFile(event.target.files?.[0])} />
-          {file ? <><div className="drop-icon selected-file"><FileArchive size={23} /></div><strong>{file.name}</strong><span>{formatFileSize(file.size)} · ZIP selected · within 50 MB limit</span><button type="button" className="text-button" onClick={removeSelectedFile}>Remove file</button></>
-            : <><div className="drop-icon"><FolderUp size={23} /></div><strong>Drop your project archive here</strong><span>ZIP files only · Maximum size 50 MB</span><button type="button" className="button button-outline" onClick={() => fileInput.current?.click()}>Browse files</button></>}
+          {file ? <><div className="drop-icon selected-file"><FileArchive size={23} /></div><strong>{file.name}</strong><span>{formatFileSize(file.size)} · ZIP selected · within 19 MiB limit</span><button type="button" className="text-button" onClick={removeSelectedFile}>Remove file</button></>
+            : <><div className="drop-icon"><FolderUp size={23} /></div><strong>Drop your project archive here</strong><span>ZIP files only · Maximum size 19 MiB</span><button type="button" className="button button-outline" onClick={() => fileInput.current?.click()}>Browse files</button></>}
         </div>
         {error && <div className="form-message form-error" role="alert"><AlertCircle size={16} />{error}</div>}
         {progress && <section className={`scan-progress scan-progress-${progress.state}`} aria-live="polite">

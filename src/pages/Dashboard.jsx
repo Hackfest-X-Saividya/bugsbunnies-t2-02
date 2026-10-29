@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, ArrowRight, Braces, CircleCheck, Download, Eye
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, PageHeader, StatCard } from "../components/Primitives.jsx";
+import { DemoNotice, PageHeader, ScanStatusNotice, StatCard } from "../components/Primitives.jsx";
 import FindingsTable from "../components/FindingsTable.jsx";
 import FindingInspector from "../components/FindingInspector.jsx";
 import FlaggedCodePanel from "../components/FlaggedCodePanel.jsx";
@@ -23,6 +23,9 @@ export default function Dashboard() {
   const { scan, getReview, updateReview, removeFlag } = useScan();
   const [query, setQuery] = useState("");
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const securityScanErrors = (scan.backendErrors || [])
+    .filter((error) => error?.stage === "security_scan" && typeof error.message === "string")
+    .map((error) => error.message);
   const severityCounts = useMemo(() => countFindingsBySeverity(scan.findings), [scan.findings]);
   const counts = SEVERITY_ORDER.map((severity) => ({
     name: severity,
@@ -49,14 +52,16 @@ export default function Dashboard() {
   return <div className="page-content">
     <PageHeader eyebrow="OVERVIEW / SECURITY POSTURE" title="Security dashboard" description={`A connected view of findings and API routes for ${scan.projectName}.`} action={<Link to="/scan" className="button button-primary"><Braces size={16} /> New scan</Link>} />
     {scan.isDemo && <DemoNotice />}
-    {!scan.isDemo && scan.securityFindingsAvailable === false && <DemoNotice>API route discovery completed, but this backend did not provide vulnerability findings. Zero findings means none were returned—not that the source is secure.</DemoNotice>}
+    {!scan.isDemo && scan.securityFindingsAvailable === false && <ScanStatusNotice>{securityScanErrors.length
+      ? `API route discovery completed, but the security scan failed: ${securityScanErrors.join(" ")}`
+      : "API route discovery completed, but this backend did not provide vulnerability findings. Zero findings means none were returned—not that the source is secure."}</ScanStatusNotice>}
     <div className="stats-grid">
       <StatCard label="Total findings" value={scan.findings.length} note={scan.securityFindingsAvailable === false && !scan.isDemo ? "No vulnerability scanner results returned" : "Across all ratings"} icon={ShieldAlert} />
       <StatCard label="Critical severity" value={severityCounts.Critical} note="Immediate review" icon={AlertTriangle} tone="red" />
       <StatCard label="High severity" value={severityCounts.High} note="Prioritize review" icon={AlertTriangle} tone="red" />
       <StatCard label="Medium severity" value={severityCounts.Medium} note="Review recommended" icon={Activity} tone="amber" />
       <StatCard label="Low severity" value={severityCounts.Low} note="Hardening opportunities" icon={CircleCheck} tone="blue" />
-      <StatCard label="API endpoints" value={endpointCount} note={`${documentationData[1].routes} documentation mismatch`} icon={Braces} tone="cyan" />
+      <StatCard label="API endpoints" value={endpointCount} note={`${documentationData[1].routes} undocumented · ${documentationData[2].routes} not compared`} icon={Braces} tone="cyan" />
       <StatCard label="Findings needing review" value={reviewCounts.needsReview} note="Needs Review or flagged" icon={Eye} tone="amber" />
       <StatCard label="Flagged for removal" value={reviewCounts.flagged} note="Human review only" icon={AlertTriangle} tone="red" />
     </div>
@@ -76,7 +81,7 @@ export default function Dashboard() {
     <section className="panel findings-panel">
       <div className="panel-heading panel-heading-table"><div><h2>Potential vulnerabilities</h2><p>Select a finding to inspect its evidence and remediation.</p></div><div className="table-actions"><label className="search-field compact-search"><span className="sr-only">Search findings</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search findings..." /></label><Link to="/reports" className="button button-subtle"><Download size={15} /> Report</Link></div></div>
       <FindingsTable items={visibleFindings} onSelect={setSelectedFinding} getReview={getReview} />
-      {visibleFindings.length === 0 && <div className="table-empty">No findings match “{query}”.</div>}
+      {visibleFindings.length === 0 && <div className="table-empty">{scan.findings.length === 0 ? "0 findings returned for this scan." : `No findings match “${query}”.`}</div>}
       <div className="table-footer"><span>Showing {visibleFindings.length} of {scan.findings.length} findings</span><Link to="/reports">View report <ArrowRight size={14} /></Link></div>
     </section>
     <FlaggedCodePanel findings={scan.findings} getReview={getReview} removeFlag={removeFlag} onSelect={setSelectedFinding} />

@@ -2,8 +2,9 @@
 
 `api_intelligence` statically discovers common FastAPI route decorators in a
 Python project, adds conservative authentication review signals, correlates
-normalized scanner findings, and can compare discovered routes with OpenAPI.
-It parses source with Python's AST; it never imports or executes target code.
+Bandit security findings, and can compare discovered routes with OpenAPI. It
+parses source with Python's AST and runs Bandit as a subprocess; it never
+imports or executes target code.
 
 ## Use
 
@@ -63,8 +64,8 @@ findings on a known line outside the handler range are left unmatched.
 
 Run the tests with:
 
-```powershell
-python -m unittest discover -s tests -v
+```bash
+python -m pytest -q
 ```
 
 ## HTTP scan endpoint
@@ -72,7 +73,7 @@ python -m unittest discover -s tests -v
 The standard-library WSGI application exposes `POST /api/v1/scan`. Run it for
 local development with:
 
-```powershell
+```bash
 python -m api_intelligence.http_api
 ```
 
@@ -80,9 +81,9 @@ The development server listens on `127.0.0.1:8000`. Send a
 `multipart/form-data` request with a required `source_zip` file field and an
 optional `openapi_json` file field:
 
-```powershell
-curl.exe -X POST http://127.0.0.1:8000/api/v1/scan `
-  -F "source_zip=@project.zip;type=application/zip" `
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/scan \
+  -F "source_zip=@project.zip;type=application/zip" \
   -F "openapi_json=@openapi.json;type=application/json"
 ```
 
@@ -95,6 +96,20 @@ never executed. The server verifies the archive contents, including member
 integrity, before extracting any files. The temporary extraction directory is
 removed after analysis.
 
+Install the optional scanner dependency to enable vulnerability findings:
+
+```bash
+python -m pip install -e ".[scanner]"
+```
+
+Bandit findings include the rule, severity, project-relative file path, line,
+evidence, and remediation where available. Findings are correlated to a route
+only when the source location falls within its handler range. Scanner
+availability is reported separately from route discovery; if Bandit is
+unavailable or fails, the route scan can still complete, but the response sets
+`security_findings_available` to `false` and includes safe
+`security_scan_errors`.
+
 A successful response has this shape:
 
 ```json
@@ -102,8 +117,11 @@ A successful response has this shape:
   "status": "completed",
   "summary": {
     "routes_discovered": 1,
-    "security_findings_available": false
+    "security_findings_available": true,
+    "security_findings": 0,
+    "files_scanned": 1
   },
+  "security_findings": [],
   "routes": [
     {
       "method": "GET",
@@ -124,17 +142,20 @@ A successful response has this shape:
   "unmatched_findings": [],
   "openapi_comparison": null,
   "errors": [],
+  "security_scan_errors": [],
   "limitations": []
 }
 ```
 
 The route entries use the internal API Intelligence field names documented
 above. `openapi_comparison` is `null` when no specification was uploaded;
-otherwise it contains the comparison result. `errors` and `limitations` come
-from static route analysis. The endpoint does not include security findings:
-this repository has no security scanner, so `security_findings_available` is
-`false` and route-level `findings` remain empty. Authentication signals are
-heuristics and do not establish whether an endpoint is actually protected.
+otherwise it contains the comparison result. `security_findings` contains all
+Bandit findings; route-level `findings` contain correlated findings wrapped
+with their correlation method. `unmatched_findings` contains findings without
+a defensible route association. `errors` contains route-analysis and
+security-scanner errors, while `security_scan_errors` contains only scanner
+errors. Authentication signals are heuristics and do not establish whether
+an endpoint is actually protected.
 
 Request errors use `{"error": {"kind": "...", "message": "..."}}`. The endpoint
 returns `400` for malformed requests, `411` when `Content-Length` is missing

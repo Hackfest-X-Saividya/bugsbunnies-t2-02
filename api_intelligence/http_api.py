@@ -9,7 +9,9 @@ import lzma
 import ntpath
 import os
 import re
+import shutil
 import stat
+import sys
 import tempfile
 import zlib
 from email import policy
@@ -22,9 +24,18 @@ from wsgiref.simple_server import make_server
 from zipfile import BadZipFile, ZipFile
 
 from .route_discovery import analyze_project
+from src.zeroshadow_security import (
+    SecurityIntelligenceService,
+    to_security_errors,
+    to_security_findings,
+)
 
 LOGGER = logging.getLogger(__name__)
 ENDPOINT_PATH = "/api/v1/scan"
+CORS_ALLOWED_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_OPENAPI_BYTES = 2 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 100 * 1024 * 1024
@@ -58,6 +69,38 @@ def _json_response(
         + (extra_headers or []),
     )
     return [encoded]
+
+
+def _empty_response(
+    start_response: Callable[..., Any],
+    status: HTTPStatus,
+    extra_headers: list[tuple[str, str]] | None = None,
+) -> list[bytes]:
+    start_response(
+        f"{status.value} {status.phrase}",
+        [("Content-Length", "0")] + (extra_headers or []),
+    )
+    return []
+
+
+def _cors_start_response(
+    environ: dict[str, Any],
+    start_response: Callable[..., Any],
+) -> Callable[..., Any]:
+    origin = environ.get("HTTP_ORIGIN")
+    if origin not in CORS_ALLOWED_ORIGINS:
+        return start_response
+
+    def start_with_cors(status: str, headers: list[tuple[str, str]], exc_info: Any = None) -> Any:
+        cors_headers = headers + [
+            ("Access-Control-Allow-Origin", origin),
+            ("Vary", "Origin"),
+        ]
+        if exc_info is None:
+            return start_response(status, cors_headers)
+        return start_response(status, cors_headers, exc_info)
+
+    return start_with_cors
 
 
 def _read_request_body(environ: dict[str, Any]) -> bytes:
@@ -400,26 +443,79 @@ def _extract_archive(archive_bytes: bytes, root: Path) -> None:
 
 def _scan(source_zip: bytes, openapi_document: dict[str, Any] | None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="api-intelligence-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         _extract_archive(source_zip, root)
-        analysis = analyze_project(root, openapi_spec=openapi_document)
+        scanner = SecurityIntelligenceService()
+        bandit = Path(sys.prefix) / "bin" / "bandit"
+        executable = str(bandit) if bandit.is_file() else shutil.which("bandit") or "bandit"
+        security_result = scanner.scan(root, executable=executable)
+        internal_findings = security_result.to_internal_dict()["findings"]
+        public_findings = to_security_findings(security_result)
+
+        for finding in internal_findings:
+            path = Path(finding["path"])
+            if path.is_absolute():
+                try:
+                    finding["path"] = path.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    finding["path"] = path.name
+
+        for finding in public_findings:
+            path = Path(finding["file_path"])
+            if path.is_absolute():
+                try:
+                    finding["file_path"] = path.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    finding["file_path"] = path.name
+            finding["id"] = f'{finding["rule_id"]}:{finding["file_path"]}:{finding["line"] or 0}'
+
+        public_findings_by_key = {
+            (item["rule_id"], item["file_path"], item["line"]): item
+            for item in public_findings
+        }
+        analysis = analyze_project(
+            root,
+            findings=internal_findings,
+            openapi_spec=openapi_document,
+        )
+
+        for route in analysis["routes"]:
+            for association in route["findings"]:
+                finding = association["finding"]
+                key = (finding["rule_id"], finding["path"], finding["line"])
+                association["finding"] = public_findings_by_key[key]
+        unmatched_findings = [
+            public_findings_by_key[
+                (finding["rule_id"], finding["path"], finding["line"])
+            ]
+            for finding in analysis["unmatched_findings"]
+        ]
+        security_errors = [
+            {key: error[key] for key in ("code", "message", "stage")}
+            for error in to_security_errors(security_result)
+        ]
 
     return {
         "status": "completed",
         "summary": {
             "routes_discovered": len(analysis["routes"]),
-            "security_findings_available": False,
+            "security_findings_available": security_result.succeeded,
+            "security_findings": len(public_findings),
+            "files_scanned": security_result.files_scanned,
         },
         "routes": analysis["routes"],
-        "unmatched_findings": analysis["unmatched_findings"],
+        "security_findings": public_findings,
+        "unmatched_findings": unmatched_findings,
         "openapi_comparison": analysis["openapi_comparison"],
-        "errors": analysis["errors"],
+        "errors": [*analysis["errors"], *security_errors],
+        "security_scan_errors": security_errors,
         "limitations": analysis["limitations"],
     }
 
 
 def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
     """WSGI application implementing POST /api/v1/scan."""
+    start_response = _cors_start_response(environ, start_response)
     path = environ.get("PATH_INFO", "")
     method = environ.get("REQUEST_METHOD", "").upper()
     if path != ENDPOINT_PATH:
@@ -428,12 +524,48 @@ def application(environ: dict[str, Any], start_response: Callable[..., Any]) -> 
             HTTPStatus.NOT_FOUND,
             {"error": {"kind": "not_found", "message": "Endpoint not found."}},
         )
+    if method == "OPTIONS":
+        origin = environ.get("HTTP_ORIGIN")
+        requested_method = environ.get("HTTP_ACCESS_CONTROL_REQUEST_METHOD", "").upper()
+        requested_headers = {
+            header.strip().lower()
+            for header in environ.get("HTTP_ACCESS_CONTROL_REQUEST_HEADERS", "").split(",")
+            if header.strip()
+        }
+        if origin not in CORS_ALLOWED_ORIGINS:
+            return _json_response(
+                start_response,
+                HTTPStatus.FORBIDDEN,
+                {"error": {"kind": "origin_not_allowed", "message": "The request origin is not allowed."}},
+            )
+        if requested_method and requested_method != "POST":
+            return _json_response(
+                start_response,
+                HTTPStatus.METHOD_NOT_ALLOWED,
+                {"error": {"kind": "method_not_allowed", "message": "Only POST requests are allowed."}},
+                [("Allow", "POST, OPTIONS")],
+            )
+        if not requested_headers.issubset({"content-type"}):
+            return _json_response(
+                start_response,
+                HTTPStatus.BAD_REQUEST,
+                {"error": {"kind": "unsupported_preflight_header", "message": "The requested headers are not supported."}},
+            )
+        return _empty_response(
+            start_response,
+            HTTPStatus.NO_CONTENT,
+            [
+                ("Access-Control-Allow-Methods", "POST, OPTIONS"),
+                ("Access-Control-Allow-Headers", "Content-Type"),
+                ("Access-Control-Max-Age", "600"),
+            ],
+        )
     if method != "POST":
         return _json_response(
             start_response,
             HTTPStatus.METHOD_NOT_ALLOWED,
             {"error": {"kind": "method_not_allowed", "message": "Use POST for this endpoint."}},
-            [("Allow", "POST")],
+            [("Allow", "POST, OPTIONS")],
         )
 
     try:

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bot, Check, Clipboard, FileCode2, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useScan } from "../context/ScanContext.jsx";
-import { DemoNotice, FindingRating, MethodBadge, PageHeader } from "../components/Primitives.jsx";
+import { DemoNotice, FindingRating, MethodBadge, PageHeader, ScanStatusNotice } from "../components/Primitives.jsx";
 import CodeViewer from "../components/CodeViewer.jsx";
 import { explainFinding } from "../services/api.js";
 
@@ -20,6 +20,9 @@ export default function EndpointDetails() {
     || finding.endpoint === `${endpoint.method} ${endpoint.path}`
     || finding.endpoint === endpoint.path
   )) : [], [endpoint, scan.findings]);
+  const securityScanErrors = (scan.backendErrors || [])
+    .filter((error) => error?.stage === "security_scan" && typeof error.message === "string")
+    .map((error) => error.message);
   if (!endpoint) return <div className="page-content"><Link className="back-link" to="/explorer"><ArrowLeft size={15} /> Back to API Explorer</Link><div className="panel not-found"><ShieldAlert size={25} /><h2>Endpoint not found</h2><p>This route is not included in the currently selected scan.</p><Link className="button button-outline" to="/explorer">Browse API Explorer</Link></div></div>;
 
   const remediation = related[0]?.mitigation || "No scanner finding is associated with this route. Review authentication, authorization, input validation, and error handling as part of your normal security review.";
@@ -53,7 +56,9 @@ export default function EndpointDetails() {
   return <div className="page-content">
     <Link className="back-link" to="/explorer"><ArrowLeft size={15} /> Back to API Explorer</Link>
     {scan.isDemo && <DemoNotice />}
-    {!scan.isDemo && scan.securityFindingsAvailable === false && <DemoNotice>The backend returned route inventory only and did not provide source-code vulnerability findings.</DemoNotice>}
+    {!scan.isDemo && scan.securityFindingsAvailable === false && <ScanStatusNotice>{securityScanErrors.length
+      ? `Route discovery completed, but the security scan failed: ${securityScanErrors.join(" ")}`
+      : "The backend returned route inventory only and did not provide source-code vulnerability findings."}</ScanStatusNotice>}
     <div className="endpoint-title panel">
       <div className="endpoint-title-main"><div className="endpoint-symbol"><FileCode2 size={20} /></div><div><div className="eyebrow">ENDPOINT RISK X-RAY <span className="endpoint-id">· {endpoint.id}</span></div><div className="endpoint-heading"><MethodBadge method={endpoint.method} /><h1>{endpoint.path}</h1></div><p>{endpoint.summary}</p></div></div>
       <div className={`doc-status ${endpoint.documented === true ? "doc-ok" : endpoint.documented === false ? "doc-missing" : ""}`}><span />{endpoint.documented === true ? "Documented" : endpoint.documented === false ? "Undocumented" : "Not compared"}</div>

@@ -92,6 +92,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button-large { min-height: 45px; padding: 0 17px; font-size: 12px; }
 .demo-notice { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 18px; color: #aeb9ca; border: 1px solid #3c3972; background: linear-gradient(90deg, #28245250, #151d35); border-radius: 8px; font-size: 10px; }
 .demo-notice svg { color: #a99bff; flex: 0 0 auto; }
+.live-scan-notice { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 18px; color: #e8d8ae; border: 1px solid #5b4b2d; background: linear-gradient(90deg, #342b1850, #151d35); border-radius: 8px; font-size: 10px; }
+.live-scan-notice svg { color: #e6bd67; flex: 0 0 auto; }
 .panel { border: 1px solid #202f47; background: linear-gradient(145deg, #111d32, #0f1a2e); border-radius: 11px; box-shadow: 0 8px 25px #0000000c; }
 .panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .panel-heading h2, .section-title-row h2 { margin: 0; color: #e4eaf3; font-size: 13px; font-weight: 610; letter-spacing: -.1px; }
@@ -331,7 +333,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .report-disclaimer { margin-top: 12px; }
 .history-panel { overflow: hidden; }
 .history-panel > .panel-heading { padding: 16px; }
-.history-row { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-top: 1px solid #202f47; }
+.history-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 16px; border: 0; border-top: 1px solid #202f47; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.history-row:hover, .history-row-selected { background: #18243a; }
 .history-icon { width: 34px; height: 34px; display: grid; place-items: center; color: #a9a4ff; background: #6460d71e; border-radius: 9px; }
 .history-project { flex: 1; min-width: 0; }
 .history-project strong, .history-project span { display: block; }

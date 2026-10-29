@@ -1,8 +1,16 @@
 node_modules/
 dist/
+.venv/
 .env
+.env.*
+!.env.example
 .DS_Store
 .pytest_cache/
 __pycache__/
 *.py[cod]
 *.egg-info/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+test_project.zip

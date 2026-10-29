@@ -33,19 +33,50 @@ const searchablePages = [
   { title: "Settings", detail: "Workspace and backend configuration", path: "/settings", type: "Page", icon: SettingsIcon },
 ];
 
-const initialNotifications = [
-  { id: "finding", title: "High-severity signals need review", detail: "2 potential findings are marked High in the demo scan.", read: false, path: "/dashboard" },
-  { id: "docs", title: "Documentation mismatch detected", detail: "One discovered route is not documented.", read: false, path: "/explorer" },
-  { id: "scan", title: "Demo analysis is ready", detail: "payments-api has 5 illustrative findings and 5 routes.", read: true, path: "/history" },
-];
+function notificationsForScan(scan) {
+  const source = scan.isDemo ? "Demo" : "Live";
+  const findingCount = scan.findings.length;
+  const notifications = [{
+    id: `${scan.id}-scan`,
+    title: scan.isDemo ? "Demo analysis loaded" : "Live scan completed",
+    detail: scan.isDemo
+      ? `${scan.projectName} contains ${findingCount} illustrative findings and ${scan.endpoints.length} routes.`
+      : `${scan.projectName}: ${findingCount} findings · ${scan.endpoints.length} routes discovered.`,
+    read: true,
+    path: scan.isDemo ? "/history" : "/dashboard",
+    source,
+  }];
+  const undocumented = scan.endpoints.filter((endpoint) => endpoint.documented === false).length;
+  if (undocumented) {
+    notifications.push({
+      id: `${scan.id}-docs`,
+      title: "Documentation mismatch detected",
+      detail: `${undocumented} route${undocumented === 1 ? "" : "s"} in ${scan.projectName} are undocumented.`,
+      read: false,
+      path: "/explorer",
+      source,
+    });
+  }
+  if (!scan.isDemo && findingCount > 0) {
+    notifications.push({
+      id: `${scan.id}-findings`,
+      title: "Potential findings need review",
+      detail: `${findingCount} scanner finding${findingCount === 1 ? "" : "s"} were returned for ${scan.projectName}.`,
+      read: false,
+      path: "/dashboard",
+      source,
+    });
+  }
+  return notifications;
+}
 
 function WorkspaceLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { scan } = useScan();
+  const { scan, storageError } = useScan();
   const [activePanel, setActivePanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState(() => notificationsForScan(scan));
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
   const [notice, setNotice] = useState(location.state?.demoMessage || "");
   const [noticeKey, setNoticeKey] = useState(0);
@@ -85,6 +116,10 @@ function WorkspaceLayout() {
     setActivePanel(null);
     setProfileDetailsOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    setNotifications(notificationsForScan(scan));
+  }, [scan.id]);
 
   useEffect(() => {
     if (location.state?.demoMessage) {
@@ -171,18 +206,18 @@ function WorkspaceLayout() {
             <button type="button" className="icon-button notification-button" aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} aria-haspopup="dialog" aria-expanded={activePanel === "notifications"} onClick={() => setActivePanel((current) => current === "notifications" ? null : "notifications")}>
               <Bell size={17} />{unreadCount > 0 && <i aria-hidden="true" />}
             </button>
-            {activePanel === "notifications" && <section className="header-popover notification-popover" role="dialog" aria-label="Demo notifications">
-              <div className="popover-heading"><div><strong>Notifications</strong><small>Demo activity · not live alerts</small></div><button type="button" className="popover-icon-button" aria-label="Close notifications" onClick={() => setActivePanel(null)}><X size={15} /></button></div>
+            {activePanel === "notifications" && <section className="header-popover notification-popover" role="dialog" aria-label={`${scan.isDemo ? "Demo" : "Live scan"} notifications`}>
+              <div className="popover-heading"><div><strong>Notifications</strong><small>{scan.isDemo ? "Demo activity · illustrative" : "Selected scan activity"}</small></div><button type="button" className="popover-icon-button" aria-label="Close notifications" onClick={() => setActivePanel(null)}><X size={15} /></button></div>
               {unreadCount > 0 && <button type="button" className="mark-read-button" onClick={markAllRead}><Check size={13} /> Mark all as read</button>}
               <div className="notification-list">
                 {notifications.length ? notifications.map((item) => <article className={`notification-item ${item.read ? "is-read" : ""}`} key={item.id}>
                   <button type="button" className="notification-content" onClick={() => { setNotifications((items) => items.map((notification) => notification.id === item.id ? { ...notification, read: true } : notification)); selectSearchResult(item.path); }}>
-                    <span className="notification-indicator">{!item.read && <i />}</span><span><strong>{item.title}</strong><small>{item.detail}</small><em>Demo notification</em></span>
+                    <span className="notification-indicator">{!item.read && <i />}</span><span><strong>{item.title}</strong><small>{item.detail}</small><em>{item.source} notification</em></span>
                   </button>
                   <button type="button" className="popover-icon-button dismiss-notification" aria-label={`Dismiss ${item.title}`} onClick={() => dismissNotification(item.id)}><X size={14} /></button>
                 </article>) : <div className="search-empty">You’ve dismissed all demo notifications.</div>}
               </div>
-              <div className="popover-footer">Notifications are illustrative demo data.</div>
+              <div className="popover-footer">{scan.isDemo ? "Notifications are illustrative demo activity." : "Notifications reflect the selected live scan."}</div>
             </section>}
           </div>
           <div className="header-control profile-control">
@@ -207,6 +242,7 @@ function WorkspaceLayout() {
         </div>
       </header>
       {notice && <div key={noticeKey} className="demo-session-message dismissible-notice" role="status"><Shield size={14} /><span>{notice}</span><button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}><X size={14} /></button></div>}
+      {storageError && <div className="demo-session-message" role="status"><Shield size={14} /><span>{storageError}</span></div>}
       <Routes>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/scan" element={<NewScan />} />
